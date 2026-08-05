@@ -4,7 +4,7 @@
 
 Built for the [CockroachDB × AWS Hackathon: Build with Agentic Memory](https://devpost.com) (deadline Aug 18, 2026).
 
-> Created by **Rishi Chhabra** & **Aryan Kandari** — ML researchers at Stevens Institute of Technology.
+> Created by **Rishi Chhabra** & **Aryan Kandari**
 
 ---
 
