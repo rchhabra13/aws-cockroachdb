@@ -35,26 +35,7 @@ OmniNPC applies the visibility rule during database retrieval:
 This design prevents another NPC's private rows from entering the recall context. It
 does not attempt to treat model instructions as an access-control boundary.
 
-## Features and roadmap
 
-| Capability | Availability |
-|---|---|
-| HTTP and WebSocket dialogue | Available |
-| Private semantic memory per NPC and player | Available |
-| Role-scoped shared events | Available |
-| Repeatable visibility verification | Available in `scripts/mini_scenario.py` |
-| Automatic event extraction from dialogue | Planned; the demo publishes events explicitly |
-| World actions and incident creation | Planned; database tables are defined |
-| Conversation checkpoint recovery | Planned; the checkpoint table is defined |
-| Memory inspector | Limited; it does not preserve the exact context used for a turn |
-| Auditor | Limited; it does not include standalone authorization events |
-| Web application | Planned; the repository contains a Next.js scaffold |
-| EKS deployment | Planned |
-
-LM Studio is the default dialogue provider. Gemini and Amazon Bedrock dialogue adapters
-are also selectable through configuration. Embeddings currently use the local
-`all-MiniLM-L6-v2` model in every configuration; the Bedrock embedding implementation is
-not connected to the storage and retrieval path.
 
 ## Scenario guides
 
@@ -163,53 +144,6 @@ All runtime settings are read from `backend/.env`.
 
 Changing the embedding model requires updating the database vector dimension and
 re-embedding existing memory rows.
-
-## API summary
-
-| Endpoint | Purpose | Availability |
-|---|---|---|
-| `POST /dialogue` | Recall memories, generate a reply, and store the exchange | Available |
-| `WS /ws/dialogue` | WebSocket wrapper around the dialogue flow | Available |
-| `GET /inspector/conversations/{id}` | Return a reconstructed memory view | Limited |
-| `GET /auditor/incidents/{player_id}` | Return recorded incidents and linked shared events | Limited |
-
-## Repository layout
-
-| Path | Contents |
-|---|---|
-| `backend/app/memory/` | Memory storage, semantic retrieval, and shared-event publication |
-| `backend/app/providers/` | LM Studio and Amazon Bedrock dialogue adapters |
-| `backend/app/routers/` | Dialogue, inspector, and auditor API routes |
-| `schema/` | CockroachDB schema and deterministic demo data |
-| `scripts/mini_scenario.py` | Automated visibility verification |
-| `docs/SCENARIO.md` | Comprehensive scenario and implementation status |
-| `docs/MINI_SCENARIO.md` | Focused verification scenario |
-| `frontend/` | Uncustomized Next.js application scaffold |
-
-## Troubleshooting
-
-| Symptom | Likely cause |
-|---|---|
-| `root certificate file ... does not exist` | The CockroachDB Cloud CA certificate is missing from `~/.postgresql/root.crt` |
-| `expected 384 dimensions, not N` | The stored vector type and embedding model use different dimensions |
-| Dialogue requests time out | The selected model server is unavailable or its credentials are invalid |
-| Bedrock returns an access or billing error | The AWS account or selected model is not enabled for invocation |
-
-Backend logs are available with:
-
-```bash
-docker compose logs backend --tail=50
-```
-
-## Security
-
-`backend/.env` contains database and provider credentials and is excluded from Git. If a
-credential is committed, rotate it immediately; removing it from the latest commit does
-not remove it from repository history.
-
-The sample policy in `iam/omninpc-policy.json` grants model invocation and speech
-synthesis permissions. Review and restrict the resource scope before using it outside a
-demo environment.
 
 ## License
 
