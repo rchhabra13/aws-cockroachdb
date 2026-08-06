@@ -1,125 +1,224 @@
-# Bank Branch Scenario
+# The bank branch scenario
 
-The demo scenario, with the assertion and implementation status for each step.
+This document describes the demo, explains what each part of it is meant to prove, and
+records honestly how much of it is actually built.
 
-Status verified against the live cluster on 5 August 2026.
+Status was checked against the live database on 5 August 2026.
 
-## Characters
+## The idea
 
-| Name | Role | Can reach |
+A bank branch has four staff members. A player walks in and talks to them.
+
+The interesting part is not that the characters remember the player. It is that they
+remember *different things*, and cannot see each other's memories. If the player tells
+the manager something in private, the teller must not know it. If a security clearance is
+issued, the guard must know it even though nobody told the guard directly.
+
+That is the whole project. Everything else is machinery to make it true.
+
+## The characters
+
+| Name | Role | What they can see |
 |---|---|---|
-| Marge | teller | Own conversations, branch events visible to `teller` |
-| Daniel Okafor | manager | Own conversations including private ones, events visible to `manager` |
-| Ruth Alvarez | guard | Own conversations, events visible to `guard` |
-| Sam | customer | Own conversations only. Not yet seeded |
+| Marge | teller | Her own conversations, plus branch announcements sent to tellers |
+| Daniel Okafor | manager | His own conversations including private ones, plus announcements sent to managers |
+| Ruth Alvarez | guard | Her own conversations, plus announcements sent to guards |
+| Sam | customer | Only his own conversations. Not built yet |
 
-## Access rules
+## How memory is stored
 
-**Private memory.** A `memory_embeddings` row with `npc_id` set. Only that character
-retrieves it, and only above a relevance floor of 0.25.
+There are two kinds of memory, and the difference between them is what makes the demo
+work.
 
-**Shared branch event.** A `shared_branch_events` row carrying `visible_to_roles`, paired
-with a `memory_embeddings` row where `npc_id` is null. Any character with a listed role
-retrieves it, with no relevance floor.
+A **private memory** belongs to one character. It is a row in `memory_embeddings` with
+that character's id on it. When a character searches its memory, the query only returns
+rows carrying its own id, so one character's memories are structurally unreachable by
+another. Private memories are also filtered by relevance, so a character does not dredge
+up unrelated small talk.
 
-The distinction matters at step 3. The conversation transcript stays private to Daniel
-while the authorization is published separately as a shared event. Without that second
-write Ruth has no path to it and step 6 fails.
+A **branch announcement** belongs to nobody. It is a row in `shared_branch_events` with a
+list of the roles allowed to see it, paired with a memory row that has no owner. Any
+character whose role is on that list retrieves it. Announcements are deliberately not
+filtered by relevance, because a guard should be told about an active security clearance
+no matter how the question was phrased.
 
-Implemented in `app/memory/retrieval.py` and `app/memory/publish.py`.
+The important consequence: a character can only be told what its query returns. If a
+private memory is never returned, it never reaches the prompt, and the model cannot
+mention something it was never given.
 
-## Steps
+The code is in `app/memory/retrieval.py` and `app/memory/publish.py`.
 
-### 1. Player asks the teller about the vault
+## What happens in the demo
 
-Marge answers; the exchange is stored scoped to her.
+### 1. The player asks the teller about the vault
 
-**Assert.** Two `memory_embeddings` rows, both owned by Marge. **Working.**
+Marge answers normally. Both her reply and the player's question are saved as her private
+memories.
 
-### 2. Player refers to the vault in different words
+**Built and working.**
 
-"That secure storage room" retrieves the step 1 conversation despite sharing no
-vocabulary with it.
+### 2. The player mentions it again, using different words
 
-**Assert.** `recalled_memories` contains the step 1 exchange. **Working**, measured at
+The player says "that secure storage room" without ever saying "vault". Marge still knows
+what they mean, because memories are searched by meaning rather than by matching words.
+
+**Built and working.** The earlier conversation was retrieved with similarity scores of
 0.52 and 0.43.
 
-### 3. Player privately tells the manager about an authorized test
+### 3. The player privately tells the manager about an authorized security test
 
-Two writes. The transcript is private to Daniel. The authorization is published as a
-shared event visible to `guard` and `manager`.
+This step writes two separate things, and the separation is the point.
 
-**Assert.** One private row, one shared event, one memory row with a null `npc_id`.
+The conversation itself is saved as Daniel's private memory. Nobody else will ever
+retrieve it. Separately, the *fact* that a clearance now exists is published as a branch
+announcement addressed to guards and managers.
 
-**Partial.** Both writes work. The authorization is published by an explicit call rather
-than recognised in the conversation. Automatic extraction is deliberately separate so a
-failed assertion cannot be blamed ambiguously on the classifier or the visibility rules.
+If only the conversation were saved, Ruth would have no way of learning about the
+clearance, and step 6 would fail. If only the announcement were saved, the private
+conversation would not be private.
 
-### 4. Player asks the teller what the manager said
+**Partly built.** Both writes work correctly. What is missing is recognition: right now
+the announcement is published by an explicit function call, rather than the system reading
+the player's sentence and understanding that a clearance was granted.
 
-**Assert.** Marge's recall contains nothing from step 3.
+### 4. The player asks the teller what the manager said
 
-**Working.** Verified in [`MINI_SCENARIO.md`](MINI_SCENARIO.md), with controls confirming
-both characters reach their own memories using the same query.
+Marge should genuinely not know. Not refuse to answer, not deflect. The private
+conversation is never returned by her query, so it never appears in her prompt, so there
+is nothing for her to reveal.
 
-### 5. Player approaches the vault
+**Built and working.** See [Verification](#verification) below.
 
-A world action, not a dialogue turn. Creates an incident and publishes it to `guard` and
-`manager`.
+### 5. The player walks toward the vault
 
-**Assert.** One `incidents` row, one shared event. Marge can retrieve neither.
+This is not a conversation. It is something the player does, which the world reacts to by
+recording an incident and announcing it to guards and managers. Marge, whose role is not
+on the list, is not told.
 
-**Not built.** No code path creates incidents.
+**Not built.** Nothing in the code creates incidents yet.
 
-### 6. Player asks the guard for vault access
+### 6. The player asks the guard for access to the vault
 
-Ruth reaches the incident and the authorization, but not Daniel's transcript, and
-de-escalates rather than treating the player as an intruder.
+Ruth now has two announcements available to her: that someone approached the vault, and
+that a clearance was issued. She has neither of Daniel's private messages. Knowing about
+the clearance, she lets the player through instead of treating them as an intruder.
 
-**Assert.** Recall contains both events and no private transcript. Removing the
-authorization changes her reply.
+**Partly built.** The clearance half works and is verified below. The incident from step 5
+does not exist, so Ruth currently reacts to a clearance on its own rather than weighing a
+clearance against an alert.
 
-**Partial.** Verified for the authorization: with it she acknowledges clearance, without
-it she demands credentials. The step 5 incident does not exist, so she currently acts on
-an authorization alone rather than weighing one against an alert.
+### 7. The backend is restarted in the middle of the conversation
 
-### 7. Restart the backend mid conversation
+Everything should carry on as though nothing happened, because none of the memory lives
+in the running process.
 
-**Assert.** The conversation continues consistently from `agent_checkpoints`.
+**Not built.** The `agent_checkpoints` table exists and has the right unique constraint,
+but no code writes to it. Messages and memories would survive a restart today because
+they are already saved to the database. In-progress conversation state would not.
 
-**Not built.** The table exists with a unique constraint on
-`(session_id, idempotency_key)`, but nothing writes to it. Messages and memories would
-survive a restart today; agent state would not.
+### 8. Someone asks why the guard let the player through
 
-### 8. Query the auditor
+An auditor endpoint answers from the stored records rather than from the model's
+recollection, listing the incident and the clearance in the order they happened.
 
-`GET /auditor/incidents/{player_id}` reconstructs why Ruth acted, from stored records.
+**Not working in practice.** The endpoint exists, but it has never returned data, and it
+uses an inner join to the incidents table. A clearance comes from a conversation and has
+no incident attached, so that join silently discards it.
 
-**Assert.** Both events returned in chronological order.
+## Verification
 
-**Not built in practice.** The endpoint exists but has never returned data, and its inner
-join to `incidents` silently excludes conversation sourced events, which have no
-`incident_id`.
+A script at `scripts/mini_scenario.py` runs steps 1, 3, 4 and 6 against the real database
+and checks the results automatically. It exists so the memory rules could be proven before
+the rest of the demo was built.
 
-## Known issues
+```bash
+docker compose up -d backend
+psql "$COCKROACHDB_URL" -f schema/seed.sql
+backend/.venv/bin/python scripts/mini_scenario.py
+```
 
-1. **A conversation row is created per request.** `dialogue.py` uses
-   `ON CONFLICT DO NOTHING`, but `conversations` has no unique constraint on
-   `(npc_id, player_id, session_id)`, so the clause never fires.
-2. **Wrong fallback for conversation id.** When the insert returns nothing, `dialogue.py`
-   falls back to `req.session_id`, putting a session id in a column referencing
-   `conversations.id`. Unreachable until issue 1 is fixed, then corrupting.
-3. **`shared_branch_events` has no `player_id`,** so the auditor cannot filter
-   conversation sourced events by player.
-4. **The inspector is a stub.** It returns the twenty most recent memories rather than
-   the set retrieved during a turn, hardcodes `similarity` to 1.0, and returns
-   placeholder text for the prompt.
+It checks three things:
 
-## Next
+**The teller cannot reach the manager's private conversation.** To make sure this is not
+passing simply because the search is broken and returns nothing, two controls run
+alongside it. Marge must successfully retrieve her own memories when asked about them, and
+Daniel must retrieve his own using the very same query that Marge is denied. Together they
+show that the rows are retrievable in principle and that Marge specifically is being
+excluded.
 
-1. Fix issues 1 and 2, add `player_id` to `shared_branch_events`.
-2. Extract authorizations from conversation, gated by `permissions.can_publish`, so the
-   same sentence to Marge publishes nothing.
-3. Create incidents from world actions, completing steps 5 and 6.
-4. Persist per turn traces and rewrite the inspector.
-5. Write checkpoints, completing step 7.
+**The guard can reach the clearance, but not the conversation that produced it.**
+
+**Withdrawing the clearance removes it from what the guard can reach.** The script asks
+Ruth for vault access, deletes the clearance, and asks the identical question again.
+
+The two answers it gets:
+
+> With the clearance in place: "I have been informed by the branch manager that you are
+> authorized to conduct a security test."
+
+> After it is deleted: "I do not have authorization to grant access to the vault. State
+> your credentials."
+
+Nothing about the question changed, and the model was given no new instructions. The only
+difference is that one row had been deleted from the database, so Ruth's search no longer
+returned the clearance, so her prompt no longer mentioned it. That is the memory system
+visibly deciding what a character knows.
+
+The script deletes its own leftover data before each run, so it can be run repeatedly. It
+only touches the test player's rows.
+
+## Four things that went wrong
+
+Recorded because each was a real mistake, and each would be easy to repeat.
+
+**A test that can only pass.** The first version of the teller check passed while Marge
+retrieved nothing whatsoever, which is exactly what a completely broken search would also
+produce. Negative assertions need positive controls next to them, which is why the two
+described above exist.
+
+**Retrieving a memory is not the same as acting on it.** Ruth once had the clearance in
+her prompt and ignored it completely, still demanding credentials. Every memory was being
+listed as an identical bullet point, so a manager's clearance looked no more important
+than a remark about the weather. Splitting the prompt into "what you personally remember"
+and "announcements issued to your role", which is what `app/prompts.py` now does, is what
+made her act on it. Deciding what a character *can* know is access control; deciding what
+it *pays attention to* is presentation, and both have to be right.
+
+**A measurement that changed what it measured.** Ruth kept granting access after the
+clearance was deleted, because her own earlier reply granting it had itself been saved as
+a private memory, which she then retrieved. The script now undoes the memories a test
+question creates.
+
+**Relevance filtering cannot apply to announcements.** Measured with the current embedding
+model, a genuinely related question scores between 0.40 and 0.65 against the conversation
+it refers to, and an unrelated one scores below 0.10, so private memories are filtered at
+0.25. But the clearance scores only 0.290 against "I need to check the vault", low enough
+that any filter strict enough to remove noise would also throw the clearance away. So
+announcements are never filtered by relevance, only by entitlement. These numbers belong to
+this specific embedding model and must be measured again if it is replaced.
+
+## Known bugs
+
+1. **A new conversation row is created on every single request.** `dialogue.py` relies on
+   `ON CONFLICT DO NOTHING`, but the `conversations` table has no unique constraint for
+   the clause to detect a conflict against, so it never triggers.
+2. **The fallback conversation id is wrong.** When that insert returns nothing,
+   `dialogue.py` substitutes the session id into a column that points at
+   `conversations.id`. Unreachable while bug 1 exists, and corrupting the moment it is
+   fixed.
+3. **`shared_branch_events` has no `player_id` column,** so the auditor has no way to
+   filter announcements by player.
+4. **The memory inspector does not inspect anything.** It returns the twenty most recent
+   memories instead of the ones actually used in a turn, reports every similarity as 1.0,
+   and returns placeholder text where the prompt should be.
+
+## What to build next
+
+1. Fix bugs 1 and 2, and add `player_id` to `shared_branch_events`.
+2. Recognise clearances in what the player actually says, checked against each
+   character's permission to issue them, so that the same sentence said to Marge publishes
+   nothing at all.
+3. Create incidents from world actions, which completes steps 5 and 6.
+4. Save what was retrieved and what prompt was built for each turn, and rewrite the
+   inspector to read it.
+5. Write conversation checkpoints, which completes step 7.

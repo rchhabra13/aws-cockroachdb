@@ -1,12 +1,12 @@
-"""Mini scenario: does the visibility model actually hold?
+"""Checks that the memory visibility rules actually hold.
 
-Specified in docs/MINI_SCENARIO.md. Four steps, two assertions, one claim:
+Runs steps 1, 3, 4 and 6 of the demo described in docs/SCENARIO.md against the real
+database, and checks three things: that the teller cannot reach the manager's private
+conversation, that the guard can reach the clearance but not the conversation behind it,
+and that withdrawing the clearance removes it from what the guard can reach.
 
-    A memory belonging to one character is unreachable by another, while an event
-    published to a role is reachable by every character holding that role.
-
-Assertions run against retrieval sets rather than model replies. A language model
-declining to reveal something is not evidence that it was never given it.
+Checks are made against what the search returned, not against what the model said. A
+model declining to reveal something is not evidence that it was never told it.
 
 Usage:
     docker compose up -d backend
