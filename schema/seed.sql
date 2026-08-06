@@ -10,8 +10,9 @@ INSERT INTO players (id, name)
 SELECT '0a5e0000-0000-4000-8000-0000000000ff', 'Player One'
 WHERE NOT EXISTS (SELECT 1 FROM players WHERE id = '0a5e0000-0000-4000-8000-0000000000ff');
 
--- permissions.can_publish gates which event types a character may publish. It is the
--- field the Phase 5 extraction gate reads. Everything in personality is flavour.
+-- permissions.can_publish is reserved for the future publication-permission gate. The
+-- current mini scenario publishes its authorization explicitly. Everything in
+-- personality affects characterization only.
 
 INSERT INTO npcs (id, branch_id, name, role, personality, permissions)
 SELECT '0a5e0000-0000-4000-8000-00000000000a',

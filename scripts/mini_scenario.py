@@ -1,9 +1,9 @@
-"""Checks that the memory visibility rules actually hold.
+"""Verify the memory visibility rules described in docs/MINI_SCENARIO.md.
 
-Runs steps 1, 3, 4 and 6 of the demo described in docs/SCENARIO.md against the real
-database, and checks three things: that the teller cannot reach the manager's private
-conversation, that the guard can reach the clearance but not the conversation behind it,
-and that withdrawing the clearance removes it from what the guard can reach.
+Runs the focused bank-branch scenario against the configured database and checks three
+things: the teller cannot reach the manager's private conversation, the guard can reach
+the authorization but not the conversation behind it, and withdrawing the authorization
+removes it from the guard's recall set.
 
 Checks are made against what the search returned, not against what the model said. A
 model declining to reveal something is not evidence that it was never told it.
