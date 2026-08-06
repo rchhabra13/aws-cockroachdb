@@ -105,6 +105,21 @@ contains no memory whose `npc_id` is Daniel.
 This is the positive case paired with its own negative. Ruth learns that an
 authorization exists without gaining access to the conversation that produced it.
 
+### Step 5. Withdraw the authorization and ask again
+
+The player asks Ruth for vault access twice, once with the authorization in place and
+once after it has been withdrawn. Both questions are identical.
+
+**Assertion.** The authorization is absent from Ruth's recall set after withdrawal.
+
+Whether her two replies differ is reported but not asserted, because model output is not
+stable enough to gate a test on. The retrieval set is the deterministic claim; the reply
+is the demonstration.
+
+Steps 1 through 4 establish that the right characters can reach the right memories. This
+step establishes that reaching them matters. Without it the scenario proves only that
+rows are returned, never that returning them changes anything.
+
 ## Files
 
 Three files. Each is a component of the final system rather than scaffolding to be
@@ -122,9 +137,23 @@ derives `visible_to_roles` from the event type rather than accepting it from the
 and writes the corresponding memory row with the correct `source_type` and `source_id`.
 Phase 5 extends this same function with incident creation.
 
+**`backend/app/prompts.py`**
+Prompt composition, separated from the router. Renders private memories and shared branch
+bulletins under distinct headings, which is what gives a shared event enough authority for
+a character to act on it. See the findings below.
+
 **`scripts/mini_scenario.py`**
-Executes the four steps against a running backend, prints each recall set, and reports
+Executes the five steps against a running backend, prints each recall set, and reports
 pass or fail per assertion.
+
+## Model provider
+
+Dialogue runs locally through LM Studio, selected with `LLM_PROVIDER=lmstudio`.
+
+Gemini was the original choice but its free tier allows only 20 requests per day per
+model, and a single run of this scenario spends four. Development stalled after a handful
+of runs. Running locally removes the quota entirely and keeps iteration fast. Gemini and
+Bedrock remain selectable through the same setting.
 
 ## Schema changes
 
@@ -165,7 +194,8 @@ unreachable, which most likely indicates the `source_type` mismatch described in
 
 ## Result
 
-Passing as of 5 August 2026, against the live cluster.
+Passing as of 5 August 2026, against the live cluster, with dialogue generated locally
+by LM Studio.
 
 ```
 control: Marge reaches 2 of her own memories
@@ -173,7 +203,20 @@ control: Daniel reaches his own private memories with the same query: True
 N1 PASS  teller sees her own memories, but not the private conversation
          nor guard/manager events
 N2 PASS  guard sees the authorization but not the conversation behind it
+N3 PASS  revoking the authorization removes it from what the guard can reach
+replies differ: True (not asserted)
 ```
+
+The two replies from step 5, to the identical question:
+
+> **With the authorization.** "I am aware of your request to access the vault. I have
+> been informed by the branch manager that you are authorized to conduct a security
+> test. Please provide your identification for verification before I can grant entry."
+
+> **Without it.** "I do not see any authorization for vault access on your person or in
+> your documentation. State your credentials."
+
+Same player, same words, same model. One row in the database is the only difference.
 
 ### Why there are two controls
 
@@ -187,6 +230,34 @@ that she reach her own memories, proving retrieval works for her. The second iss
 identical query as Daniel and requires that he reach his own private memories, proving
 those rows are retrievable at all. Only with both in place does Marge's inability to
 reach them demonstrate access control rather than an inert row or a dead code path.
+
+### Retrieving a memory is not enough on its own
+
+The first version of step 5 failed in a way worth recording. Ruth held the authorization
+in her context and ignored it, answering "State your name and your authorization for
+vault access" whether or not she had already been given exactly that.
+
+The cause was prompt composition, not retrieval. Every recalled memory was rendered as
+an identical bullet, so a manager issued authorization looked no more authoritative than
+small talk about the weather. Separating the two, under headings that name the private
+memories as personal recollection and the shared events as branch bulletins issued to the
+character's role, is what made the authorization land. That composition now lives in
+`backend/app/prompts.py`.
+
+The lesson generalises. Access control decides what a character *can* know, but
+presentation decides what it *acts on*, and a demo that gets the first right and the
+second wrong looks identical to one where the memory system does not work.
+
+### A probe must not disturb what it measures
+
+The second version failed differently. Ruth continued granting access after the
+authorization was withdrawn, because her own earlier reply granting it had been written
+back as a private memory, which she then recalled.
+
+The ablation was measuring its own side effects. Probe turns are now rolled back after
+the reply is captured, so the only difference between the two runs is the authorization
+itself. The recall set printed after withdrawal is empty, which confirms the rollback
+left nothing behind.
 
 ### Repeatability
 

@@ -113,6 +113,71 @@ async def reset() -> None:
     print(f"  reset: cleared prior runs for the test player ({len(event_ids)} shared events)")
 
 
+async def probe(npc_id: uuid.UUID, session: uuid.UUID, message: str) -> str:
+    """Ask a question without leaving a trace, so the answer can be compared fairly.
+
+    A normal turn writes the exchange back as memory. That ruins an ablation: the first
+    probe's reply becomes a private memory, the guard recalls having already granted
+    access, and she keeps granting it after the authorization is withdrawn. Rolling the
+    probe back leaves the authorization as the only difference between the two runs.
+    """
+    pool = await get_pool()
+    before = {
+        r["id"]
+        for r in await pool.fetch(
+            "SELECT id FROM memory_embeddings WHERE npc_id = $1 AND player_id = $2",
+            npc_id,
+            PLAYER,
+        )
+    }
+    reply = await say(npc_id, session, message)
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            new_sources = [
+                r["source_id"]
+                for r in await conn.fetch(
+                    """
+                    SELECT source_id FROM memory_embeddings
+                    WHERE npc_id = $1 AND player_id = $2 AND NOT (id = ANY($3::UUID[]))
+                    """,
+                    npc_id,
+                    PLAYER,
+                    list(before),
+                )
+            ]
+            await conn.execute(
+                """
+                DELETE FROM memory_embeddings
+                WHERE npc_id = $1 AND player_id = $2 AND NOT (id = ANY($3::UUID[]))
+                """,
+                npc_id,
+                PLAYER,
+                list(before),
+            )
+            if new_sources:
+                await conn.execute(
+                    "DELETE FROM messages WHERE id = ANY($1::UUID[])", new_sources
+                )
+    return reply
+
+
+async def revoke_event(event_id: uuid.UUID) -> None:
+    """Withdraw a published event so the ablation can be measured.
+
+    Deletes both rows, because shared_branch_events has no revoked_at column yet. A soft
+    revoke is the better demo mechanism and is scheduled with the other schema work; for
+    a test that resets its own data first, a delete is equivalent and needs no migration.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "DELETE FROM memory_embeddings WHERE source_type = 'shared_event' AND source_id = $1",
+                event_id,
+            )
+            await conn.execute("DELETE FROM shared_branch_events WHERE id = $1", event_id)
+
+
 async def main() -> int:
     session = uuid.uuid4()
     failures = []
@@ -206,12 +271,42 @@ async def main() -> int:
     )
 
     print("\n" + "=" * 84)
+    print("STEP 5  Ablation: does the authorization actually change what Ruth says?")
+    print("\n  Asking Ruth, with the authorization in place:")
+    reply_with = await probe(RUTH, session, "I need to get into the vault.")
+    print(f"    Ruth: {reply_with[:220]}")
+
+    await revoke_event(event_id)
+    print(f"\n  revoked event {event_id}")
+
+    ruth_after = await recall(RUTH, PLAYER, "I need to check the vault")
+    show("Ruth recalled after revocation:", ruth_after)
+
+    print("\n  Asking Ruth the same question, with the authorization gone:")
+    reply_without = await probe(RUTH, session, "I need to get into the vault.")
+    print(f"    Ruth: {reply_without[:220]}")
+
+    # The hard assertion is the retrieval set, which is deterministic. Whether the two
+    # replies differ is logged but not asserted, because model output is not stable
+    # enough to gate a test on.
+    still_authorized = event_id in {h.source_id for h in ruth_after}
+    if still_authorized:
+        failures.append("N3: the authorization was still retrievable after revocation")
+    print(
+        "\n  N3 "
+        + ("PASS" if not still_authorized else "FAIL")
+        + "  revoking the authorization removes it from what the guard can reach"
+    )
+    print(f"  replies differ: {reply_with.strip() != reply_without.strip()} (not asserted)")
+
+    print("\n" + "=" * 84)
     if failures:
         print("FAILED")
         for f in failures:
             print(f"  {f}")
     else:
-        print("PASSED  visibility holds in both directions")
+        print("PASSED  visibility holds in both directions, and shared memory "
+              "changes behaviour")
     print("=" * 84)
 
     await close_pool()

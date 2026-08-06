@@ -3,10 +3,11 @@ import asyncio
 from fastapi import APIRouter
 
 from app.db import get_pool
-from app.gemini import generate_dialogue
+from app.providers import generate_dialogue
 from app.memory.extraction import store_memory
 from app.memory.retrieval import recall
 from app.models import DialogueRequest, DialogueResponse
+from app.prompts import compose_system_prompt
 
 router = APIRouter(prefix="/dialogue", tags=["dialogue"])
 
@@ -17,12 +18,8 @@ async def dialogue(req: DialogueRequest) -> DialogueResponse:
     npc = await pool.fetchrow("SELECT name, role, personality FROM npcs WHERE id = $1", req.npc_id)
 
     memories = await recall(req.npc_id, req.player_id, req.message)
-    memory_context = "\n".join(f"- {m.content}" for m in memories) or "No relevant memories."
-
-    system_prompt = (
-        f"You are {npc['name']}, the {npc['role']} at this bank branch. "
-        f"Personality: {npc['personality']}. "
-        f"Relevant memories of this player:\n{memory_context}"
+    system_prompt = compose_system_prompt(
+        npc["name"], npc["role"], npc["personality"], memories
     )
     reply = await asyncio.to_thread(generate_dialogue, system_prompt, req.message)
 

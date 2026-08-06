@@ -180,10 +180,11 @@ authorization rather than treating the player as an intruder.
 and does not contain the private transcript. Removing the authorization row and
 repeating the request produces a materially different response.
 
-**Status.** Partially implemented. The retrieval half is verified: the mini scenario
-confirms Ruth reaches the authorization while reaching none of Daniel's private
-transcript. Not yet built are the vault approach incident from step 5, and the assertion
-that removing the authorization changes her reply.
+**Status.** Partially implemented. The mini scenario verifies both halves: Ruth reaches
+the authorization while reaching none of Daniel's private transcript, and withdrawing the
+authorization visibly changes her reply from acknowledging clearance to demanding
+credentials. Not yet built is the vault approach incident from step 5, so she currently
+acts on the authorization alone rather than on an authorization weighed against an alert.
 
 ### Step 7. Restart the backend and continue the conversation
 

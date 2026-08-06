@@ -86,7 +86,8 @@ You will need:
 
 - Docker with Compose.
 - A CockroachDB Cloud cluster. The free tier is enough.
-- A Google Gemini API key. Gemini is the development model provider; see
+- A local model server. LM Studio is the default; a Gemini API key also works, though
+  its free tier allows only 20 requests per day per model. See
   [Current status](#current-status) for the Bedrock path.
 - `psql` for applying the schema.
 
@@ -123,8 +124,11 @@ the CockroachDB Cloud console, which looks like this:
 postgresql://<user>:<password>@<host>:26257/defaultdb?sslmode=verify-full
 ```
 
-`GEMINI_API_KEY` is your Gemini key. Leave the Bedrock values alone for now. This file is
-excluded from Git; do not commit it.
+Then set `LM_STUDIO_API_KEY` to the token from LM Studio's Developer tab, with its server
+running and a model loaded. To use Gemini instead, set `LLM_PROVIDER=gemini` and
+`GEMINI_API_KEY`. Leave the Bedrock values alone for now.
+
+This file is excluded from Git; do not commit it.
 
 ### 4. Apply the schema
 
@@ -235,8 +239,12 @@ All settings live in `backend/.env`.
 | Variable | Default | What it controls |
 |---|---|---|
 | `COCKROACHDB_URL` | none | Cluster connection string. Required. |
-| `GEMINI_API_KEY` | none | Gemini API key. Required for dialogue. |
-| `GEMINI_MODEL_ID` | `gemini-2.5-flash` | Dialogue model. |
+| `LLM_PROVIDER` | `lmstudio` | Dialogue provider: `lmstudio`, `gemini`, or `bedrock`. |
+| `LM_STUDIO_BASE_URL` | `http://host.docker.internal:1234` | LM Studio server. Use `http://localhost:1234` outside Docker. |
+| `LM_STUDIO_API_KEY` | none | LM Studio API token. |
+| `LM_STUDIO_MODEL_ID` | `google/gemma-4-12b` | Local dialogue model. |
+| `GEMINI_API_KEY` | none | Gemini API key, only if `LLM_PROVIDER=gemini`. |
+| `GEMINI_MODEL_ID` | `gemini-2.5-flash` | Gemini dialogue model. |
 | `AWS_REGION` | `us-east-1` | Region for the Bedrock provider. |
 | `BEDROCK_DIALOGUE_MODEL_ID` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | Bedrock dialogue model. Must be an inference profile id. |
 | `BEDROCK_EMBEDDING_MODEL_ID` | `amazon.titan-embed-text-v2:0` | Bedrock embedding model. |
@@ -277,8 +285,8 @@ Under active development. This table is kept accurate rather than aspirational.
 | Frontend | Scaffold only |
 | Amazon EKS deployment | Not built |
 
-Gemini and local embeddings are the development path, chosen because Bedrock access on
-the project's AWS account is blocked by an AWS Marketplace payment restriction. The
+Local models and local embeddings are the development path, chosen because Bedrock access
+on the project's AWS account is blocked by an AWS Marketplace payment restriction. The
 Bedrock provider in `backend/app/providers/bedrock.py` is written against verified model
 identifiers and is the intended production path alongside EKS.
 
