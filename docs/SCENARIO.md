@@ -7,7 +7,7 @@ memory system. It defines the actors, the information access rules between them,
 sequence of interactions, and the assertion attached to each step.
 
 Implementation status is recorded per step. Status values are verified against the
-live CockroachDB cluster and the current source tree as of 2026-08-04.
+live CockroachDB cluster and the current source tree as of 2026-08-05.
 
 ## Scope
 
@@ -115,8 +115,12 @@ with `visible_to_roles` set to `["guard", "manager"]`.
 **Assertion.** One private memory row scoped to Daniel, one `shared_branch_events`
 row, and one `memory_embeddings` row with `npc_id` set to `NULL`.
 
-**Status.** Not implemented. Daniel does not exist in the database and no code writes
-to `shared_branch_events`.
+**Status.** Partially implemented. Daniel is seeded, and `app/memory/publish.py`
+performs both writes correctly, deriving `visible_to_roles` from the event type rather
+than accepting it from the caller. What is missing is recognition: the authorization is
+published by an explicit call, not extracted from the conversation. Automatic extraction
+is deliberately separated so that a failed assertion cannot be blamed on either the
+classifier or the visibility rules ambiguously.
 
 ### Step 4. Player asks the teller about the manager conversation
 
@@ -136,9 +140,10 @@ never included in the prompt sent to the model.
 
 **Assertion.** `recalled_memories` contains no memory originating from step 3.
 
-**Status.** Partially implemented. The visibility filter exists in `recall()` and is
-correct by inspection, but has not been tested against cross NPC data because only one
-NPC exists.
+**Status.** Implemented and verified. The mini scenario
+([`MINI_SCENARIO.md`](MINI_SCENARIO.md)) asserts this against real cross NPC data, with
+controls confirming that both characters can reach their own memories using the same
+query. Marge recalls hers, Daniel recalls his, and neither reaches the other's.
 
 ### Step 5. Player approaches the vault
 
@@ -175,7 +180,10 @@ authorization rather than treating the player as an intruder.
 and does not contain the private transcript. Removing the authorization row and
 repeating the request produces a materially different response.
 
-**Status.** Not implemented. Depends on steps 3 and 5.
+**Status.** Partially implemented. The retrieval half is verified: the mini scenario
+confirms Ruth reaches the authorization while reaching none of Daniel's private
+transcript. Not yet built are the vault approach incident from step 5, and the assertion
+that removing the authorization changes her reply.
 
 ### Step 7. Restart the backend and continue the conversation
 
@@ -224,7 +232,8 @@ empty result because `incidents` and `shared_branch_events` are empty.
 | Local embeddings, `all-MiniLM-L6-v2`, 384 dimensions | Working |
 | CockroachDB distributed vector index | Working |
 | Deployment via `docker compose` | Working |
-| Visibility scoped retrieval query | Written, untested |
+| Visibility scoped retrieval query | Working, verified by the mini scenario |
+| Shared branch event publication | Working, invoked manually rather than extracted |
 | Memory inspector | Stub, see known issues |
 | Auditor endpoint | Written, never returned data |
 | NPCs Daniel, Ruth, Sam | Not implemented |
@@ -237,21 +246,23 @@ empty result because `incidents` and `shared_branch_events` are empty.
 
 ## Current database contents
 
-Verified 2026-08-04 against the `ashtray` cluster.
+Verified 2026-08-05 against the `ashtray` cluster.
 
 | Table | Rows |
 |---|---|
-| branches | 1 |
-| npcs | 1 (Marge) |
-| players | 1 |
-| conversations | 3 |
-| messages | 5 |
-| memory_embeddings | 4 |
+| branches | 2 |
+| npcs | 4 (Marge, Daniel, Ruth, plus one superseded Marge) |
+| players | 2 |
+| conversations | 5 |
+| messages | 9 |
+| memory_embeddings | 9 |
+| shared_branch_events | 1 |
 | incidents | 0 |
-| shared_branch_events | 0 |
 | promises | 0 |
 | relationships | 0 |
 | agent_checkpoints | 0 |
+
+Counts move as the mini scenario is run, since it resets and repopulates its own data.
 
 ## Known issues
 

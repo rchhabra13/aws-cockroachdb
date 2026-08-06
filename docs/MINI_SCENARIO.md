@@ -162,3 +162,36 @@ A pass means the visibility model holds in both directions and the remaining pha
 build on it. A failure in step 3 means private memories are leaking across NPCs, which
 invalidates the project's central claim. A failure in step 4 means shared events are
 unreachable, which most likely indicates the `source_type` mismatch described in step 2.
+
+## Result
+
+Passing as of 5 August 2026, against the live cluster.
+
+```
+control: Marge reaches 2 of her own memories
+control: Daniel reaches his own private memories with the same query: True
+N1 PASS  teller sees her own memories, but not the private conversation
+         nor guard/manager events
+N2 PASS  guard sees the authorization but not the conversation behind it
+```
+
+### Why there are two controls
+
+Both assertions are negative, and a negative assertion passes trivially when retrieval
+returns nothing at all. The first version of this script passed N1 while Marge recalled
+absolutely nothing, which is the same result a completely broken retrieval path would
+produce.
+
+Two controls close that gap. The first adds a prior conversation with Marge and requires
+that she reach her own memories, proving retrieval works for her. The second issues the
+identical query as Daniel and requires that he reach his own private memories, proving
+those rows are retrievable at all. Only with both in place does Marge's inability to
+reach them demonstrate access control rather than an inert row or a dead code path.
+
+### Repeatability
+
+The script clears its own prior state before each run, scoped to the seeded test player.
+Without this, every run left behind another authorization event and another pair of
+transcripts, so the guard eventually recalled the same authorization several times over
+and the assertions gradually lost their meaning. No NPC, branch, or player rows are
+removed, and no data outside the test player is touched.
