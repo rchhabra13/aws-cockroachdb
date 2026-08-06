@@ -4,193 +4,231 @@ This scenario is the smallest repeatable demonstration of OmniNPC's core memory 
 tests private character memory and role-scoped shared events without depending on the
 unfinished world-action, checkpoint, audit, or frontend features.
 
-For the broader product walkthrough, see the
-[Comprehensive Bank Branch Scenario](SCENARIO.md).
+## Do you type anything?
 
-## Claim under test
+No. Every line the player speaks is written into the script. You run one command and read
+the output. There is no prompt waiting for input at any point, and typing while it runs
+does nothing except confuse your terminal.
 
-> A private memory owned by one NPC cannot be retrieved by another NPC, while an event
-> published to a role can be retrieved by an NPC holding that role without exposing the
-> private conversation behind it.
+To talk to the characters freely instead, use `POST /dialogue` directly. This scenario is
+a fixed test, not a chat session.
 
-The scenario evaluates database recall results, not only generated dialogue. A model can
-decline to reveal information that it received, so model wording alone is not sufficient
-evidence of isolation.
+## What it proves
 
-## Participants
+> A private memory owned by one character cannot be retrieved by another. An announcement
+> published to a role can be retrieved by any character holding that role, without
+> exposing the private conversation it came from.
 
-| Participant | Role in the test |
+Each check inspects what the database returned, not what the character said. A model can
+decline to repeat something it was given, so its wording is not evidence that it was kept
+in the dark.
+
+## Who takes part
+
+| Name (role) | Part in the test |
 |---|---|
-| Player One | Fixed test player whose data is reset before each run |
-| Marge, teller | Positive control for private recall and negative case for restricted data |
-| Daniel Okafor, manager | Owner of the private security-test conversation |
-| Ruth Alvarez, security guard | Authorized recipient of the published event |
+| Player One (player) | The visitor. Their data is cleared before every run |
+| Marge (teller) | Must recall her own conversation, and must not reach the manager's |
+| Daniel Okafor (manager) | Holds the private conversation |
+| Ruth Alvarez (guard) | Must receive the announcement, but not the conversation behind it |
 
-The stable identifiers for these records are defined in `schema/seed.sql`.
+All four are created by `schema/seed.sql` with fixed identifiers, so the scenario survives
+a database reset.
 
-## Scope
+## What happens
 
-Included:
+**Step 0. The player speaks to Marge (teller).**
 
-- Private message storage for two NPCs
-- Semantic recall of an NPC's own relevant memories
-- Explicit publication of an authorization to server-selected roles
-- Positive and negative retrieval assertions
-- Authorization removal as an ablation test
-- Cleanup scoped to the fixed test player
+> Player: "Morning. I would like to check my account balance."
 
-Outside this scenario:
+Her answer and the question are both saved as her private memories. This gives her
+something she ought to be able to recall later, which matters in step 3.
 
-- Automatic extraction of an authorization from dialogue
-- Permission checks that decide whether a speaker may publish an event
-- World actions and incident creation
-- Durable checkpoint recovery
-- Auditor and inspector correctness
-- Frontend behavior
-- Production event revocation
+**Step 1. The player speaks to Daniel Okafor (manager), privately.**
 
-The authorization is deliberately published by a direct function call. This isolates the
-visibility mechanism from a future classifier or extraction pipeline.
+> Player: "I need to tell you privately, I am running an authorized security test today."
 
-## Execution flow
+Saved as Daniel's private memories.
 
-### Step 1: Reset the test player
+**Step 2. An announcement is published.**
 
-The script removes memories, messages, conversations, and shared events associated with
-the fixed demo player. Seeded NPC, branch, and player records remain in place.
+> "The branch manager authorized a security test by this player."
 
-This makes repeated runs comparable and prevents old authorizations or dialogue from
-changing later recall sets.
+It is published with the type `authorization`, which the server maps to the **guard and
+manager** roles. Tellers are not on that list. This is a separate record from Daniel's
+conversation, which is the entire point: the decision travels, the conversation does not.
 
-### Step 2: Create the teller control memory
+The script publishes it with a direct call rather than by reading Daniel's message. That
+keeps the visibility rule under test isolated from any future step that might extract such
+facts automatically.
 
-The player asks Marge for help with an account balance. The exchange is stored as Marge's
-private memory.
+**Step 3. Marge (teller)'s memory is searched.** No conversation happens here. These are
+database queries.
 
-Later, the script asks a semantically related question and requires Marge to retrieve at
-least one of these rows. This proves that her private recall path works.
+| Query | Expected |
+|---|---|
+| "did the manager say anything about me?" | nothing |
+| "can you help me with my balance?" | her own two memories |
+| Daniel Okafor (manager), asked "what did I tell you about the security test?" | his own memories |
 
-### Step 3: Create the manager's private memory
+**Step 4. Ruth Alvarez (guard)'s memory is searched** with "I need to check the vault".
+She should reach the announcement and none of Daniel's conversation.
 
-The player privately tells Daniel that they are conducting an authorized security test.
-The exchange is stored with Daniel's NPC identifier.
+**Step 5. The player speaks to Ruth Alvarez (guard) twice**, with the announcement deleted
+in between.
 
-The script records the source identifiers of Daniel's private memories so it can test
-whether another NPC ever receives them.
+> Player: "I need to get into the vault."
 
-### Step 4: Publish a role-scoped authorization
+Both exchanges are undone afterwards, so neither leaves a memory that would affect the
+other. The only thing that differs between the two is whether the announcement exists.
 
-The script calls `publish_shared_event()` with event type `authorization`. The server
-maps that type to the `guard` and `manager` roles and creates:
+## The three checks
 
-- A `shared_branch_events` record containing the summary and allowed roles.
-- A matching `memory_embeddings` record associated with the player and no NPC owner.
+| Check | Passes when |
+|---|---|
+| **N1** | Marge (teller) reaches her own memories, Daniel Okafor (manager) reaches his, and Marge reaches neither Daniel's memories nor the announcement |
+| **N2** | Ruth Alvarez (guard) reaches the announcement and none of Daniel's memories |
+| **N3** | After deletion, the announcement is gone from Ruth's results |
 
-The private transcript and the operational authorization remain separate records.
+N1 carries two positive controls deliberately. Both of its important assertions are about
+absence, and absence is what a completely broken search produces as well. Requiring Marge
+to reach her own memories shows the search works for her, and requiring Daniel to reach
+his with the same query shows his rows are reachable at all. Only then does Marge's
+exclusion mean anything.
 
-### Step 5: Test the teller's recall boundary
+## Before you start
 
-The script asks what the manager said and inspects Marge's recall set. It also runs two
-positive controls.
+- `schema/init.sql` applied to your database
+- The backend running and answering on `http://localhost:8000`
+- `backend/.env` filled in with a working database URL and a dialogue provider
+- Python dependencies installed in `backend/.venv`
+- Your dialogue provider reachable. With the default setting that means LM Studio running
+  with a model loaded
 
-Assertion N1 passes only when all of the following are true:
+## Running it
 
-- Marge retrieves at least one of her own account-balance memories when asked about that
-  topic.
-- Daniel retrieves at least one of his own security-test memories.
-- Marge retrieves none of Daniel's private memory identifiers.
-- Marge retrieves no shared event addressed only to guards and managers.
+Run these from the repository root.
 
-The controls prevent an empty or broken retrieval system from passing the privacy test.
-
-### Step 6: Test the guard's authorized recall
-
-The script asks Ruth about vault access and inspects her recall set.
-
-Assertion N2 passes only when:
-
-- Ruth retrieves the published authorization identifier.
-- Ruth retrieves none of Daniel's private memory identifiers.
-
-This proves that an operational fact can cross character boundaries without the source
-conversation crossing with it.
-
-### Step 7: Remove the authorization
-
-The script asks Ruth the same access question with the authorization present, deletes the
-test event and its memory row, and asks again without leaving either probe in memory.
-
-Assertion N3 passes when the deleted authorization is absent from Ruth's next recall set.
-The script prints both model replies for comparison, but reply wording is not asserted
-because model output is nondeterministic.
-
-## Prerequisites
-
-- The database schema has been initialized with `schema/init.sql`.
-- The deterministic records in `schema/seed.sql` are present.
-- The backend is running on `http://localhost:8000`.
-- `backend/.env` contains a working database connection and dialogue-provider settings.
-- Backend Python dependencies are installed in `backend/.venv`.
-
-## Run the scenario
+**1. Start the backend.**
 
 ```bash
 docker compose up -d backend
-psql "$COCKROACHDB_URL" -f schema/seed.sql
+```
+
+**2. Create the characters.** Safe to run more than once; it will not duplicate anything.
+
+```bash
+set -a && source backend/.env && set +a && psql "$COCKROACHDB_URL" -f schema/seed.sql
+```
+
+**3. Run the scenario.**
+
+```bash
 backend/.venv/bin/python scripts/mini_scenario.py
 ```
 
-The script exits with code `0` when all assertions pass and code `1` when any assertion
-fails.
+It exits with `0` when every check passes and `1` when any fails.
 
-## Expected result
+A progress bar reading `Loading weights` and a warning about a Hugging Face token appear
+partway through. Both come from the local embedding model starting up and can be ignored.
+To hide them:
 
-A successful run ends with the following assertion summaries:
-
-```text
-N1 PASS  teller sees her own memories, but not the private conversation nor guard/manager events
-N2 PASS  guard sees the authorization but not the conversation behind it
-N3 PASS  revoking the authorization removes it from what the guard can reach
+```bash
+backend/.venv/bin/python scripts/mini_scenario.py 2>&1 | grep -v "Loading weights\|HF_TOKEN"
 ```
 
-Generated character replies and similarity values can vary with the selected dialogue
-and embedding models. The source-identifier assertions define success.
+## Initial run
 
-## Data safety and repeatability
+```text
+SETUP
+  reset: cleared prior runs for the test player (0 shared events)
 
-The script performs destructive cleanup within the test player's data before every run.
-It deletes:
+STEP 0  Player chats to the teller, so she has a memory of her own
+  Marge: Good morning! Well, hello there. It is just such a lovely start to the day,
+         isn't it? ... I would be more than happy to loo
+  stored 2 private memories for Marge
 
-- Memory rows associated with the fixed test player
-- Messages and conversations associated with that player
-- Shared events linked through those memory rows
+STEP 1  Player tells the manager, privately, about an authorized test
+  Daniel: I acknowledge your statement. Please provide the official documentation for
+          your authorization. You state that you are performing an authorized security
+          test today. Is that correct?
+  stored 2 private memories for Daniel
 
-It does not delete seeded branches, NPCs, or players, and it does not target data for any
-other player. Do not reuse the fixed demo player's identifier for data that must be
-preserved.
+STEP 2  Publish the authorization as a shared branch event
+  published event e21d4a12-1931-437a-b694-683a4a4c87bc, visible to roles: guard, manager
 
-The withdrawal step is also destructive: it deletes the test authorization because the
-schema does not yet support soft revocation.
+STEP 3  Player asks the teller what the manager said
 
-## Failure interpretation
+  Marge recalled, asked about the manager:
+    (nothing recalled)
 
-| Failure | Meaning |
-|---|---|
-| N1 control failure for Marge | Her own semantic recall returned no expected row, so the privacy result is inconclusive |
-| N1 control failure for Daniel | The manager's rows may be unreachable generally, so Marge's exclusion is inconclusive |
-| N1 private-memory failure | The teller retrieved memory owned by the manager |
-| N1 shared-event failure | The teller retrieved an event outside her role audience |
-| N2 authorization failure | The guard could not retrieve an event addressed to the guard role |
-| N2 private-memory failure | The guard retrieved the manager's private conversation |
-| N3 revocation failure | The deleted authorization remained retrievable |
+  Marge recalled, asked about her own conversation:
+    [message] 0.418  Good morning! Well, hello there. It is just such a lovely start...
+    [message] 0.399  Morning. I would like to check my account balance.
 
-## Implementation references
+  control: Marge reaches 2 of her own memories when asked about them
+  control: Daniel reaches his own private memories with the same query: True
+  N1 PASS  teller sees her own memories, but not the private conversation nor
+           guard/manager events
 
-| File | Purpose |
-|---|---|
-| `scripts/mini_scenario.py` | Scenario runner, controls, assertions, and cleanup |
-| `schema/seed.sql` | Stable branch, player, and NPC records |
-| `backend/app/memory/retrieval.py` | Private and shared recall queries |
-| `backend/app/memory/publish.py` | Role-scoped event creation |
-| `backend/app/roles.py` | Event-type audience mapping |
-| `backend/app/prompts.py` | Separation of personal memories and official bulletins |
+STEP 4  Player asks the guard for vault access
+
+  Ruth recalled:
+    [shared_event] 0.290  The branch manager authorized a security test by this player.
+
+  N2 PASS  guard sees the authorization but not the conversation behind it
+
+STEP 5  Ablation: does the authorization actually change what Ruth says?
+
+  Asking Ruth, with the authorization in place:
+    Ruth: I am aware of the authorization regarding a security test conducted by you.
+          State your identity and provide the specific credentials associated with this
+          test to proceed toward the vault area.
+
+  revoked event e21d4a12-1931-437a-b694-683a4a4c87bc
+
+  Ruth recalled after revocation:
+    (nothing recalled)
+
+  Asking Ruth the same question, with the authorization gone:
+    Ruth: Access to the vault is restricted to authorized personnel. You have not
+          presented identification or a clearance permit. State your name and the purpose
+          of your request.
+
+  N3 PASS  revoking the authorization removes it from what the guard can reach
+  replies differ: True (not asserted)
+
+PASSED  visibility holds in both directions, and shared memory changes behaviour
+```
+
+### Reading the result
+
+In step 3 Marge (teller) returned nothing about the manager, while returning both of her
+own memories when asked about something she actually discussed. The numbers beside them,
+0.418 and 0.399, are how closely each memory matched the question on a scale from 0 to 1.
+Anything below 0.25 is treated as noise and discarded, which is why the manager question
+returned an empty list rather than weak matches.
+
+In step 4 Ruth Alvarez (guard) reached the announcement at 0.290. Announcements are exempt
+from that 0.25 floor, because a guard should be told about an active clearance regardless
+of how the question happens to be worded.
+
+Step 5 is the part worth watching. The same sentence was said to Ruth twice. The first
+time she acknowledged the clearance; the second time she refused and asked for
+credentials. Nothing about the question changed and the model was given no new
+instruction. One row had been deleted, so her search no longer returned the announcement,
+so her prompt no longer mentioned it.
+
+Replies and similarity scores differ from run to run and between models. The three checks
+are what define success, not the wording.
+
+## What it deletes
+
+Before each run the script clears, **for the demo player only**, that player's memories,
+messages, conversations, and any announcements linked to them. Seeded branches,
+characters, and players are left in place, and no other player's data is touched.
+
+Do not reuse the demo player's identifier for anything you want to keep.
+
+Step 5 is destructive as well. It deletes the announcement outright, because the schema
+has no column yet for marking one withdrawn.

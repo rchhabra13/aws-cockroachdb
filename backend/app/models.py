@@ -21,6 +21,9 @@ class DialogueResponse(BaseModel):
     npc_id: UUID
     reply: str
     recalled_memories: list[MemoryHit]
+    # Returned so the inspector can show exactly what the character was given, rather
+    # than an approximation reconstructed after the fact.
+    prompt_sent: str = ""
 
 
 class InspectorTrace(BaseModel):

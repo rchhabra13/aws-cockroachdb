@@ -50,4 +50,9 @@ async def dialogue(req: DialogueRequest) -> DialogueResponse:
     )
     await store_memory("message", npc_msg["id"], reply, req.npc_id, req.player_id)
 
-    return DialogueResponse(npc_id=req.npc_id, reply=reply, recalled_memories=memories)
+    return DialogueResponse(
+        npc_id=req.npc_id,
+        reply=reply,
+        recalled_memories=memories,
+        prompt_sent=system_prompt,
+    )
