@@ -198,7 +198,13 @@ Passing as of 5 August 2026, against the live cluster, with dialogue generated l
 by LM Studio.
 
 ```
-control: Marge reaches 2 of her own memories
+Marge recalled, asked about the manager:
+  (nothing recalled)
+Marge recalled, asked about her own conversation:
+  [message] 0.497  Good morning! It is just a lovely day to be at the bank...
+  [message] 0.399  Morning. I would like to check my account balance.
+
+control: Marge reaches 2 of her own memories when asked about them
 control: Daniel reaches his own private memories with the same query: True
 N1 PASS  teller sees her own memories, but not the private conversation
          nor guard/manager events
@@ -247,6 +253,28 @@ character's role, is what made the authorization land. That composition now live
 The lesson generalises. Access control decides what a character *can* know, but
 presentation decides what it *acts on*, and a demo that gets the first right and the
 second wrong looks identical to one where the memory system does not work.
+
+### Private memories are filtered by relevance, shared events are not
+
+An early version returned every memory the character was entitled to, ranked but never
+filtered. Marge was retrieving her own small talk at a similarity of 0.048 in response to
+a question about the manager, which is noise rather than recall, and the control asserting
+she retrieved it was therefore asserting that retrieval ignores relevance.
+
+Measured against `all-MiniLM-L6-v2`, a genuinely related question scores 0.40 to 0.65
+against the conversation it refers to, while an unrelated one scores below 0.10. A floor
+of 0.25 separates them cleanly, and the control now asks Marge about her own conversation
+rather than about the manager.
+
+Shared branch events are deliberately exempt from that floor. The authorization scores
+only 0.290 against "I need to check the vault", close enough to ordinary small talk that
+any floor strict enough to remove noise would also discard the authorization. Entitlement
+rather than similarity decides whether a standing branch event is shown, which is also the
+correct behaviour: a guard should always be told about an active clearance, however the
+question happens to be phrased.
+
+These thresholds are properties of the embedding model and do not transfer. They must be
+re-measured if the project moves to Titan embeddings.
 
 ### A probe must not disturb what it measures
 

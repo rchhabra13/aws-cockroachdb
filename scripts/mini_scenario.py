@@ -217,12 +217,20 @@ async def main() -> int:
     print("\n" + "=" * 84)
     print("STEP 3  Player asks the teller what the manager said")
     marge_hits = await recall(MARGE, PLAYER, "did the manager say anything about me?")
-    show("Marge recalled:", marge_hits)
+    show("Marge recalled, asked about the manager:", marge_hits)
+
+    # The control needs its own query. "did the manager say anything" is unrelated to
+    # anything Marge knows, scoring about 0.07 against her own memories, so requiring her
+    # to retrieve them for it would be asserting that retrieval ignores relevance. Asking
+    # about what she actually discussed scores around 0.40 to 0.65 and is a fair check
+    # that her retrieval path works at all.
+    marge_control = await recall(MARGE, PLAYER, "can you help me with my balance?")
+    show("Marge recalled, asked about her own conversation:", marge_control)
 
     # Second control. Without it, N1 would pass just as well if Daniel's memories were
     # inert and retrievable by nobody. Showing he can reach them himself makes Marge's
     # inability to reach them a scoping result rather than a dead row result.
-    daniel_hits = await recall(DANIEL, PLAYER, "did the manager say anything about me?")
+    daniel_hits = await recall(DANIEL, PLAYER, "what did I tell you about the security test?")
     daniel_reaches_own = bool({h.source_id for h in daniel_hits} & daniel_private)
 
     marge_ids = {h.source_id for h in marge_hits}
@@ -230,7 +238,7 @@ async def main() -> int:
     shared_seen = [h for h in marge_hits if h.source_type == "shared_event"]
     # Without this, "recalled nothing at all" would pass N1 just as happily as correct
     # scoping does, and a broken retrieval path would look like a working one.
-    recalls_own = bool(marge_ids & marge_private)
+    recalls_own = bool({h.source_id for h in marge_control} & marge_private)
 
     if not recalls_own:
         failures.append("N1 control: Marge recalled none of her own memories, so the "
@@ -242,7 +250,8 @@ async def main() -> int:
         failures.append(f"N1: Marge recalled {len(leaked)} of Daniel's private memories")
     if shared_seen:
         failures.append(f"N1: Marge, a teller, recalled {len(shared_seen)} shared events")
-    print(f"\n  control: Marge reaches {len(marge_ids & marge_private)} of her own memories")
+    print(f"\n  control: Marge reaches {len({h.source_id for h in marge_control} & marge_private)}"
+          f" of her own memories when asked about them")
     print(f"  control: Daniel reaches his own private memories with the same query: "
           f"{daniel_reaches_own}")
     print(
