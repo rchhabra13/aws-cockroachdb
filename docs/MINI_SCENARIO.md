@@ -4,16 +4,7 @@ This scenario is the smallest repeatable demonstration of OmniNPC's core memory 
 tests private character memory and role-scoped shared events without depending on the
 unfinished world-action, checkpoint, audit, or frontend features.
 
-## Do you type anything?
-
-No. Every line the player speaks is written into the script. You run one command and read
-the output. There is no prompt waiting for input at any point, and typing while it runs
-does nothing except confuse your terminal.
-
-To talk to the characters freely instead, use `POST /dialogue` directly. This scenario is
-a fixed test, not a chat session.
-
-## What it proves
+## What it will do
 
 > A private memory owned by one character cannot be retrieved by another. An announcement
 > published to a role can be retrieved by any character holding that role, without
