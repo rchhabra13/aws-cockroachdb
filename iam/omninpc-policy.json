@@ -29,15 +29,6 @@
       "Resource": "*"
     },
     {
-      "Sid": "OmniNPCPolly",
-      "Effect": "Allow",
-      "Action": [
-        "polly:SynthesizeSpeech",
-        "polly:DescribeVoices"
-      ],
-      "Resource": "*"
-    },
-    {
       "Sid": "OmniNPCMarketplaceSubscribe",
       "Effect": "Allow",
       "Action": [

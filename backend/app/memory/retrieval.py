@@ -8,10 +8,28 @@ from app.models import MemoryHit
 
 TOP_K = 8
 
-# Below this, a private memory is noise rather than recall. Chosen from measured scores
-# with all-MiniLM-L6-v2: a genuinely related question scores 0.40 to 0.65 against the
-# conversation it refers to, while an unrelated one scores below 0.10. Re-measure if the
-# embedding model changes, since these numbers do not transfer between models.
+# Below this, a private memory is noise rather than recall.
+#
+# Measured against Titan Text Embeddings V2 at 1024 dimensions, scoring queries against
+# the stored message "Morning. I would like to check my account balance.":
+#
+#   how much money is in my account?          0.359   related, must be recalled
+#   can you help me with my balance?          0.319   related, must be recalled
+#   remind me what I came in for              0.193   refers back, carries no topic
+#   Sorry, what was I asking you about?       0.076   refers back, carries no topic
+#   did the manager say anything about me?    0.054   unrelated
+#   what did we just talk about?              0.041   refers back, carries no topic
+#   what is the weather like on Jupiter       0.020   nonsense control
+#
+# 0.25 sits in the gap between 0.193 and 0.319. Titan compresses the range compared with
+# all-MiniLM-L6-v2 (which scored the same related queries 0.399 and 0.476) but separates
+# signal from noise more cleanly, so the same floor holds with a wider margin.
+#
+# The queries clustered at 0.04 to 0.19 are references back to the conversation rather
+# than statements of its topic. No floor recovers them, because there is no topic in them
+# to embed; they need short-term conversation memory instead. See docs/SCENARIO.md.
+#
+# Re-measure if the embedding model changes. These numbers do not transfer.
 PRIVATE_SIMILARITY_FLOOR = 0.25
 
 

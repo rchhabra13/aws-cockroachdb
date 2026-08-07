@@ -12,7 +12,5 @@ services:
     build: ./frontend
     ports:
       - "3000:3000"
-    environment:
-      NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
     depends_on:
       - backend

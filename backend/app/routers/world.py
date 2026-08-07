@@ -76,6 +76,6 @@ async def withdraw_event(event_id: UUID) -> dict:
             deleted = await conn.execute(
                 "DELETE FROM shared_branch_events WHERE id = $1", event_id
             )
-    if deleted.endswith("0"):
+    if deleted.split()[-1] == "0":
         raise HTTPException(status_code=404, detail="event not found")
     return {"withdrawn": str(event_id)}

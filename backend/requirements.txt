@@ -4,9 +4,7 @@ asyncpg==0.30.0
 pydantic==2.10.5
 pydantic-settings==2.7.1
 websockets==14.1
-langgraph==0.2.62
 python-dotenv==1.0.1
 google-generativeai==0.8.3
-sentence-transformers==3.3.1
 boto3==1.35.99
 httpx==0.28.1

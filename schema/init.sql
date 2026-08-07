@@ -40,7 +40,10 @@ CREATE TABLE IF NOT EXISTS conversations (
     player_id UUID NOT NULL REFERENCES players (id),
     session_id UUID NOT NULL,
     started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    ended_at TIMESTAMPTZ
+    ended_at TIMESTAMPTZ,
+    -- One conversation per character, player, and session. Without this the dialogue
+    -- route's upsert has nothing to conflict on and writes a fresh row every turn.
+    UNIQUE (npc_id, player_id, session_id)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -92,7 +95,9 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
     npc_id UUID REFERENCES npcs (id),  -- null when the memory is branch-shared, not NPC-private
     player_id UUID REFERENCES players (id),
     content STRING NOT NULL,
-    embedding VECTOR(384) NOT NULL,  -- local sentence-transformers all-MiniLM-L6-v2 output size
+    -- Must match app/embeddings.py embedding_dim() for the configured provider:
+    -- Bedrock Titan Text Embeddings V2 at 1024, or local all-MiniLM-L6-v2 at 384.
+    embedding VECTOR(1024) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

@@ -21,13 +21,6 @@ class DialogueResponse(BaseModel):
     npc_id: UUID
     reply: str
     recalled_memories: list[MemoryHit]
-    # Returned so the inspector can show exactly what the character was given, rather
-    # than an approximation reconstructed after the fact.
+    # The exact prompt this turn was generated from, so the memory inspector renders what
+    # the character was actually given rather than a reconstruction of it.
     prompt_sent: str = ""
-
-
-class InspectorTrace(BaseModel):
-    conversation_id: UUID
-    recalled_memories: list[MemoryHit]
-    world_state_used: dict
-    prompt_sent: str

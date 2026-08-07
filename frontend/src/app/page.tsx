@@ -35,15 +35,8 @@ export default function Home() {
     (async () => {
       try {
         const [ns, ps] = await Promise.all([listNpcs(), listPlayers()]);
-        // Older smoke test rows may still sit on a second branch, so take the branch
-        // with the full cast rather than assuming there is only one.
-        const byBranch = new Map<string, Npc[]>();
-        ns.forEach((n) =>
-          byBranch.set(n.branch_id, [...(byBranch.get(n.branch_id) ?? []), n]),
-        );
-        const cast = [...byBranch.values()].sort((a, b) => b.length - a.length)[0] ?? [];
-        setNpcs(cast);
-        setActive(cast[0] ?? null);
+        setNpcs(ns);
+        setActive(ns[0] ?? null);
         const player = ps.find((p) => p.name === "Player One") ?? ps[0];
         if (player) {
           setPlayerId(player.id);

@@ -7,7 +7,7 @@ so a compromised or hallucinating caller cannot widen visibility.
 EVENT_VISIBILITY: dict[str, list[str]] = {
     "authorization": ["guard", "manager"],
     "vault_approach": ["guard", "manager"],
-    "suspicion": ["guard", "manager", "teller"],
+    "suspicion": ["guard", "manager", "teller", "loan_officer"],
 }
 
 

@@ -1,152 +1,98 @@
 # OmniNPC
 
-Role-aware semantic memory for AI characters.
+**Rishi Chhabra · Aryan Kandari**
+
+Role-aware semantic memory for AI characters, built on CockroachDB and Amazon Bedrock.
 
 ![CockroachDB](https://img.shields.io/badge/CockroachDB-Vector%20Search-6933FF)
+![Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Nova%20%2B%20Titan-FF9900)
 ![FastAPI](https://img.shields.io/badge/FastAPI-async-009688)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-OmniNPC is an experimental backend for AI characters that should remember a player
-without automatically sharing every conversation with every other character. It stores
-private character memories separately and publishes selected facts as role-scoped
-events.
+An agent that remembers everything it was ever told is not a memory system. It is a leak
+waiting for the right question.
 
-The demonstration takes place in a bank branch. A conversation with the manager remains
-private, while an authorization created from that conversation can be made available to
-the manager and security guard. The teller cannot retrieve either the private exchange
-or a security-only announcement.
+OmniNPC gives each character its own memory and enforces who may recall what **in the
+database query**, not in the prompt. A private conversation with the branch manager stays
+private. The decision that came out of it can be published to the roles that need it. The
+teller can retrieve neither.
 
-## Why OmniNPC
+## Why this is hard
 
-Many character systems either forget earlier interactions or place all history into one
-shared context. A shared context makes it easy for a character to reveal information it
-should never have received.
+Most character systems either forget earlier interactions or pour all history into one
+shared context. A shared context makes it trivial for a character to reveal something it
+should never have received, and asking the model nicely not to mention it is not an access
+control boundary.
 
-OmniNPC applies the visibility rule during database retrieval:
+OmniNPC applies the visibility rule during retrieval:
 
-- Private memories are stored with an NPC identifier and can only be recalled by that
-  NPC for the same player.
-- Shared branch events have no NPC owner. Their audience is derived from an event type
-  and matched against the requesting NPC's role.
-- Prompts separate personal memories from official branch announcements so the model can
-  distinguish conversation history from operational facts.
+- **Private memories** carry an NPC id and a player id. Recall requires both to match, so
+  there is no database path from one character to another's rows.
+- **Shared branch events** have no NPC owner. Their audience is derived from the event
+  type on the server, and matched against the requesting character's role.
+- **The prompt labels provenance**, separating what a character personally remembers from
+  official branch bulletins, so retrieved facts carry the right authority.
 
 This design prevents another NPC's private rows from entering the recall context. It
 does not attempt to treat model instructions as an access-control boundary.
-
-
 
 ## Scenario guides
 
 - [Comprehensive bank branch scenario](docs/SCENARIO.md) describes the intended
   end-to-end experience and marks the implementation status of every stage.
-- [Mini verification scenario](docs/MINI_SCENARIO.md) documents the smallest repeatable
-  test of private and role-scoped memory.
 
 ## Architecture
 
-A dialogue request follows this path:
+```mermaid
+flowchart LR
+    UI[Next.js UI<br/>chat + memory inspector] -->|POST /dialogue| API[FastAPI]
 
-1. Embed the player's message locally.
-2. Retrieve relevant private memories for the selected NPC and player.
-3. Retrieve shared events visible to the NPC's role.
-4. Compose a prompt that labels private memories and official announcements separately.
-5. Generate the reply with the configured dialogue provider.
-6. Store both sides of the exchange as private semantic memories for that NPC.
+    subgraph AWS[Amazon Bedrock]
+        TITAN[Titan Text Embeddings V2<br/>1024 dims]
+        NOVA[Amazon Nova Pro<br/>dialogue]
+    end
 
-CockroachDB stores the application records and 384-dimensional memory vectors. FastAPI
-provides the dialogue, inspector, and auditor endpoints.
+    subgraph CRDB[CockroachDB]
+        VEC[(memory_embeddings<br/>VECTOR 1024 + vector index)]
+        REL[(npcs · players · conversations<br/>messages · shared_branch_events)]
+    end
 
-## Prerequisites
-
-- Python 3.12
-- Docker with Docker Compose
-- `psql`
-- A CockroachDB database with vector indexing enabled
-- One configured dialogue provider: LM Studio, Gemini, or Amazon Bedrock
-
-For CockroachDB Cloud, download the cluster CA certificate to the location mounted by
-`docker-compose.yml`:
-
-```bash
-curl --create-dirs -o "$HOME/.postgresql/root.crt" \
-  "https://cockroachlabs.cloud/clusters/<cluster-id>/cert"
+    API -->|embed message| TITAN
+    API -->|private recall<br/>npc_id AND player_id| VEC
+    API -->|shared recall<br/>role in visible_to_roles| VEC
+    VEC --- REL
+    API -->|labelled prompt| NOVA
+    NOVA -->|reply| API
+    API -->|store both turns| TITAN
 ```
 
-## Run the API
+A dialogue request:
 
-1. Create the backend configuration:
+1. Embed the player's message with Titan.
+2. Retrieve private memories for this character and this player, above a similarity floor.
+3. Retrieve shared events whose audience includes this character's role.
+4. Compose a prompt that labels the two kinds separately.
+5. Generate the reply with Nova.
+6. Store both sides of the exchange as private memories for that character.
 
-   ```bash
-   cp backend/.env.example backend/.env
-   ```
+Structured records and 1024-dimensional memory vectors live in the same CockroachDB
+cluster, so a visibility rule is a `WHERE` clause rather than a sync job between a database
+and a separate vector store.
 
-2. Set `COCKROACHDB_URL` and the variables for your selected dialogue provider in
-   `backend/.env`.
+## Hackathon tool mapping
 
-3. Initialize and seed the database. Set the same database URL in your shell before
-   running these commands:
+Built for the [CockroachDB × AWS Hackathon — Build with Agentic Memory](https://cockroachdb-ai.devpost.com/).
 
-   ```bash
-   export COCKROACHDB_URL='postgresql://<user>:<password>@<host>:26257/<database>?sslmode=verify-full'
-   psql "$COCKROACHDB_URL" -f schema/init.sql
-   psql "$COCKROACHDB_URL" -f schema/seed.sql
-   ```
-
-4. Build and start the backend:
-
-   ```bash
-   docker compose up --build backend
-   ```
-
-The API is available at [http://localhost:8000](http://localhost:8000), and the
-interactive OpenAPI documentation is available at
-[http://localhost:8000/docs](http://localhost:8000/docs).
-
-## Run the mini verification
-
-The verification script runs on the host and calls the backend on port `8000`. Install
-the backend dependencies in a local virtual environment once:
-
-```bash
-python3.12 -m venv backend/.venv
-backend/.venv/bin/pip install -r backend/requirements.txt
-backend/.venv/bin/python scripts/mini_scenario.py
-```
-
-The script resets data associated with the fixed demo player, creates a private manager
-conversation and a role-scoped authorization, and checks three invariants:
-
-1. The teller can recall her own conversation but cannot retrieve the manager's private
-   conversation or the security announcement.
-2. The guard can retrieve the authorization but not the manager's private conversation.
-3. Removing the authorization removes it from the guard's recall set.
-
-See [the mini scenario guide](docs/MINI_SCENARIO.md) for the test boundaries and data
-cleanup behavior.
-
-## Configuration
-
-All runtime settings are read from `backend/.env`.
-
-| Variable | Default | Description |
+| Tool | Used for | Where |
 |---|---|---|
-| `COCKROACHDB_URL` | Local insecure URL | CockroachDB connection string |
-| `LLM_PROVIDER` | `lmstudio` | Dialogue provider: `lmstudio`, `gemini`, or `bedrock` |
-| `LM_STUDIO_BASE_URL` | `http://host.docker.internal:1234` | LM Studio server URL from the backend container |
-| `LM_STUDIO_API_KEY` | Empty | LM Studio API key |
-| `LM_STUDIO_MODEL_ID` | `google/gemma-4-12b` | LM Studio model identifier |
-| `GEMINI_API_KEY` | Empty | Gemini API key |
-| `GEMINI_MODEL_ID` | `gemini-2.5-flash` | Gemini model identifier |
-| `AWS_REGION` | `us-east-1` | AWS region used by the Bedrock adapter |
-| `BEDROCK_DIALOGUE_MODEL_ID` | Claude inference profile | Bedrock dialogue model identifier |
+| CockroachDB Distributed Vector Indexing | `VECTOR(1024)` column and vector index over all character memory; similarity recall | `schema/init.sql`, `backend/app/memory/retrieval.py` |
+| CockroachDB ccloud CLI | Provisioning the `omninpc` database and deriving the connection string, so no host is hardcoded | `scripts/bootstrap.sh` |
+| CockroachDB Cloud Managed MCP Server | Read-only auditing of stored memory and branch events. Configured; authentication not yet completed | `.mcp.json` |
+| Amazon Bedrock — Titan Text Embeddings V2 | Every memory vector, at 1024 dimensions | `backend/app/providers/bedrock.py`, `backend/app/embeddings.py` |
+| Amazon Bedrock — Amazon Nova Pro | Character dialogue, via the Converse API | `backend/app/providers/bedrock.py` |
 
-Changing the embedding model requires updating the database vector dimension and
-re-embedding existing memory rows.
+The cluster runs on AWS `us-east-1`, the same region as the Bedrock calls.
 
 ## License
 
-Licensed under the [MIT License](LICENSE).
-
-Created by Rishi Chhabra and Aryan Kandari.
+[MIT](LICENSE).

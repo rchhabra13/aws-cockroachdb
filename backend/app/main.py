@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from uuid import UUID
 
 from dotenv import load_dotenv
@@ -8,10 +9,17 @@ load_dotenv()  # so AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in backend/.env re
 
 from app.db import close_pool
 from app.models import DialogueRequest
-from app.routers import auditor, dialogue, inspector, npcs, world
+from app.routers import dialogue, npcs, world
 from app.routers.dialogue import dialogue as run_dialogue
 
-app = FastAPI(title="OmniNPC")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    await close_pool()
+
+
+app = FastAPI(title="OmniNPC", lifespan=lifespan)
 
 # The demo UI is served from a different port, so the browser treats it as cross origin.
 # Open here because this is a local demo; narrow it before exposing the API publicly.
@@ -23,8 +31,6 @@ app.add_middleware(
 )
 
 app.include_router(dialogue.router)
-app.include_router(inspector.router)
-app.include_router(auditor.router)
 app.include_router(npcs.router)
 app.include_router(world.router)
 
@@ -32,11 +38,6 @@ app.include_router(world.router)
 @app.get("/healthz")
 async def healthz() -> dict:
     return {"ok": True}
-
-
-@app.on_event("shutdown")
-async def shutdown() -> None:
-    await close_pool()
 
 
 @app.websocket("/ws/dialogue")

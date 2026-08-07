@@ -1,0 +1,94 @@
+<meta charset="utf-8" />
+<title>OmniNPC — Meridian Street Branch</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #171a23;
+    --line: #262b38;
+    --ink: #e7e9ee;
+    --muted: #8b93a7;
+    --accent: #6933ff;
+    --aws: #ff9900;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  #app { display: grid; grid-template-columns: 1fr 380px; height: 100vh; }
+  #stage { position: relative; display: flex; align-items: center; justify-content: center;
+    min-height: 0; overflow: hidden;
+    background: radial-gradient(1200px 800px at 40% 30%, #12151d, #0b0d12); }
+  #game-container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+  #game-container canvas { max-width: 100%; max-height: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5); border-radius: 8px; }
+  #hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: var(--muted); font-size: 13px; background: rgba(0,0,0,.45); padding: 6px 12px;
+    border-radius: 999px; border: 1px solid var(--line); }
+  #hint b { color: var(--ink); font-weight: 600; }
+
+  #inspector { background: var(--panel); border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; min-width: 0; }
+  #inspector header { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
+  #inspector header h1 { margin: 0; font-size: 15px; letter-spacing: .3px; }
+  #inspector header p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+  .badge { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); vertical-align: middle; }
+  .who { padding: 12px 18px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .who .name { font-weight: 600; }
+  .who .role { color: var(--muted); text-transform: capitalize; }
+  #insp-body { overflow-y: auto; padding: 14px 18px 24px; flex: 1; }
+  .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--muted); margin: 18px 0 8px; }
+  .section-title:first-child { margin-top: 0; }
+  .mem { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+    background: #12151d; font-size: 13px; line-height: 1.4; animation: cardIn .35s ease both; }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .mem .meta { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+  .mem .kind { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .mem .sim { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--accent); }
+  .mem.shared .sim { color: var(--aws); }
+  .mem .bar { height: 3px; background: #262b38; border-radius: 2px; margin-top: 7px; overflow: hidden; }
+  .mem .bar-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+  .mem.shared .bar-fill { background: var(--aws); }
+  .empty { color: var(--muted); font-size: 13px; font-style: italic; }
+  pre#prompt { white-space: pre-wrap; word-break: break-word; font-size: 11.5px; line-height: 1.5;
+    background: #0c0e14; border: 1px solid var(--line); border-radius: 8px; padding: 12px;
+    color: #c6ccdb; max-height: 260px; overflow-y: auto; margin: 0; }
+
+  #composer { border-top: 1px solid var(--line); padding: 12px 18px; display: none; gap: 8px; }
+  #composer.on { display: flex; }
+  #composer input { flex: 1; background: #0c0e14; border: 1px solid var(--line); color: var(--ink);
+    border-radius: 8px; padding: 10px 12px; font-size: 14px; outline: none; }
+  #composer input:focus { border-color: var(--accent); }
+  #composer button { background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+    padding: 0 16px; font-weight: 600; cursor: pointer; }
+  #composer button:disabled { opacity: .5; cursor: default; }
+</style>
+
+<div id="app">
+  <div id="stage">
+    <div id="game-container"></div>
+    <div id="hint"><b>Arrows / WASD</b> to walk &nbsp;·&nbsp; <b>E</b> to talk when close &nbsp;·&nbsp; <b>Esc</b> to leave</div>
+  </div>
+
+  <aside id="inspector">
+    <header>
+      <h1>Memory Inspector <span class="badge">live</span></h1>
+      <p>Exactly what the character could recall this turn — enforced in the CockroachDB query, not the prompt.</p>
+    </header>
+    <div class="who" id="who">
+      <span class="name">Nobody nearby</span> — <span class="role">walk up to a character</span>
+    </div>
+    <div id="insp-body">
+      <div class="section-title">Private memories <span class="badge">npc + player scoped</span></div>
+      <div id="private"><div class="empty">No turn yet.</div></div>
+      <div class="section-title">Shared branch events <span class="badge">role scoped</span></div>
+      <div id="shared"><div class="empty">No turn yet.</div></div>
+      <div class="section-title">Prompt sent to Nova</div>
+      <pre id="prompt">—</pre>
+    </div>
+    <div id="composer">
+      <input id="msg" placeholder="Say something…" autocomplete="off" />
+      <button id="send">Send</button>
+    </div>
+  </aside>
+</div>

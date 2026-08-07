@@ -23,18 +23,21 @@ async def dialogue(req: DialogueRequest) -> DialogueResponse:
     )
     reply = await asyncio.to_thread(generate_dialogue, system_prompt, req.message)
 
+    # One conversation per (character, player, session). DO UPDATE rather than DO NOTHING
+    # because only an updated row is returned, and this turn's messages need its id.
     conversation = await pool.fetchrow(
         """
         INSERT INTO conversations (npc_id, player_id, session_id)
         VALUES ($1, $2, $3)
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (npc_id, player_id, session_id)
+        DO UPDATE SET session_id = excluded.session_id
         RETURNING id
         """,
         req.npc_id,
         req.player_id,
         req.session_id,
     )
-    conversation_id = conversation["id"] if conversation else req.session_id
+    conversation_id = conversation["id"]
 
     player_msg = await pool.fetchrow(
         "INSERT INTO messages (conversation_id, speaker, content) VALUES ($1, 'player', $2) RETURNING id",
