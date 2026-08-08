@@ -6,18 +6,13 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     cockroachdb_url: str = "postgresql://root@localhost:26257/omninpc?sslmode=disable"
 
-    # which dialogue provider to use: lmstudio | gemini | bedrock
-    llm_provider: str = "lmstudio"
+    # which dialogue provider to use: gemini | bedrock
+    llm_provider: str = "bedrock"
 
     # If the primary provider raises, answer with the fallback instead of failing the
     # turn. Set false to see provider errors surface as request failures.
     llm_fallback_enabled: bool = True
-    llm_fallback_provider: str = "lmstudio"
-
-    # local LM Studio server. No quota, no network, no key leaving the machine.
-    lm_studio_base_url: str = "http://host.docker.internal:1234"
-    lm_studio_api_key: str = ""
-    lm_studio_model_id: str = "google/gemma-4-12b"
+    llm_fallback_provider: str = "gemini"
 
     # hosted Gemini. Free tier is capped at 20 requests per day per model.
     gemini_api_key: str = ""

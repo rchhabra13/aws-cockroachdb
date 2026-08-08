@@ -18,6 +18,12 @@ class Api {
     return res.json();
   }
 
+  async del(path) {
+    const res = await fetch(`${API_URL}${path}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(`DELETE ${path} -> ${res.status}`);
+    return res.json();
+  }
+
   listNpcs() {
     return this.get("/npcs");
   }
@@ -35,6 +41,11 @@ class Api {
   // Publish a manager authorization the guard can later recall. Used by the demo control.
   authorize(summary) {
     return this.post("/world/authorize", { branch_id: BRANCH_ID, player_id: PLAYER_ID, summary });
+  }
+
+  // Wipe all memory/events, keep the branch/npc/player fixtures. Used by the reset button.
+  resetWorld() {
+    return this.del("/world/reset");
   }
 }
 

@@ -2,6 +2,7 @@ import Api from "../services/Api";
 import Character from "../classes/Character";
 import DialogueBox from "../classes/DialogueBox";
 import * as Inspector from "../ui/Inspector";
+import { SCENARIOS } from "../config";
 
 // The Meridian Street branch, drawn from rectangles: a lobby, a teller counter, a manager's
 // office, a vault, a guard post. The player is a customer who walks up and talks; every reply
@@ -39,7 +40,11 @@ export class Bank extends Phaser.Scene {
     this.playerShadow = this.add.image(620, 700, "shadow").setDepth(4);
     this.player = this.physics.add.sprite(620, 690, "player").setDepth(5);
     this.player.body.setSize(30, 30).setOffset(3, 14);
-    this.physics.add.collider(this.player, this.walls);
+    // Kept as a reference so a scripted walkTo() can disable it: some NPCs (Daniel, behind
+    // the manager-office walls) aren't reachable from every spawn point by a straight line,
+    // and a scripted "walk over" is a cutscene, not manual play — passing through geometry
+    // briefly beats hanging forever on a wall.
+    this.playerWallsCollider = this.physics.add.collider(this.player, this.walls);
     this.characters.forEach((c) => this.physics.add.collider(this.player, c.sprite));
 
     this.cursors = this.input.keyboard.createCursorKeys();
@@ -74,6 +79,8 @@ export class Bank extends Phaser.Scene {
 
     this.dialogueBox = new DialogueBox(this);
     this.bindComposer();
+    this.bindResetButton();
+    this.bindScenarioButtons();
   }
 
   // --- world drawing -------------------------------------------------------
@@ -163,6 +170,131 @@ export class Bank extends Phaser.Scene {
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && this.inDialogue) this.closeDialogue();
     });
+  }
+
+  // Wipes every character's memory via /world/reset. Two clicks required (arm, then confirm)
+  // instead of window.confirm(), which some embedded/automated browsers silently suppress —
+  // that made the button look like it did nothing. Closes any open dialogue after, since the
+  // conversation it was showing no longer exists.
+  bindResetButton() {
+    const btn = document.getElementById("reset-db");
+    const label = btn.textContent;
+    let armed = false;
+    let armTimer = null;
+
+    btn.addEventListener("click", async () => {
+      if (!armed) {
+        armed = true;
+        btn.textContent = "Really clear?";
+        armTimer = setTimeout(() => {
+          armed = false;
+          btn.textContent = label;
+        }, 3000);
+        return;
+      }
+
+      clearTimeout(armTimer);
+      armed = false;
+      btn.disabled = true;
+      btn.textContent = "Clearing…";
+      try {
+        await Api.resetWorld();
+        if (this.inDialogue) this.closeDialogue();
+        Inspector.reset();
+        btn.textContent = "Cleared";
+      } catch (e) {
+        btn.textContent = "Failed";
+        console.error(e);
+      } finally {
+        setTimeout(() => {
+          btn.textContent = label;
+          btn.disabled = false;
+        }, 1200);
+      }
+    });
+  }
+
+  // Wires one button per entry in SCENARIOS. Each steps through its own script against its
+  // own target NPC, one line per click, so the memory inspector's private panel can be
+  // watched growing turn over turn instead of firing the whole script at once. Walks the
+  // player to the target on the first click (or on switching targets mid-scenario); wraps
+  // back to the start once its script is exhausted. this.pending / this.autoWalk are scene-
+  // wide, so clicking a different scenario's button mid-run is simply ignored until free.
+  bindScenarioButtons() {
+    SCENARIOS.forEach((scenario) => {
+      const btn = document.getElementById(`scenario-${scenario.key}`);
+      if (!btn) return;
+      const label = btn.textContent;
+      let step = 0;
+
+      btn.addEventListener("click", async () => {
+        if (this.pending || this.autoWalk) return;
+
+        if (step >= scenario.script.length) {
+          step = 0;
+          btn.textContent = label;
+          return;
+        }
+
+        const target = this.characters.find((c) => c.name === scenario.target);
+        if (!target) return;
+
+        btn.disabled = true;
+        if (!this.inDialogue || this.activeNpc !== target) {
+          if (this.inDialogue) this.closeDialogue();
+          btn.textContent = "Walking over…";
+          await this.walkTo(target);
+          this.openDialogue(target);
+        }
+
+        this.msgEl.value = scenario.script[step];
+        step += 1;
+        try {
+          await this.sendMessage();
+        } finally {
+          btn.disabled = false;
+          btn.textContent =
+            step < scenario.script.length
+              ? `${scenario.label} (${step}/${scenario.script.length}) ▶`
+              : `${scenario.label} — done ↺`;
+        }
+      });
+    });
+  }
+
+  // Moves the player toward npc using the same velocity-driven movement as manual walking
+  // (not a tween), so it looks like actual walking rather than a slide. Wall collision is
+  // switched off for the duration (see playerWallsCollider) and a hard timeout snaps the
+  // player straight to the target, so a scripted walk can never hang on office geometry.
+  // update() defers to stepAutoWalk() while a walk is in progress.
+  walkTo(npc) {
+    this.playerWallsCollider.active = false;
+    return new Promise((resolve) => {
+      this.autoWalk = {
+        targetX: npc.sprite.x,
+        targetY: npc.sprite.y + 54,
+        deadline: this.time.now + 4000,
+        resolve,
+      };
+    });
+  }
+
+  stepAutoWalk() {
+    const { targetX, targetY, deadline, resolve } = this.autoWalk;
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, targetX, targetY);
+    if (d < 6 || this.time.now > deadline) {
+      this.player.setPosition(targetX, targetY);
+      this.player.body.setVelocity(0);
+      this.playerShadow.setPosition(targetX, targetY + 20);
+      this.playerWallsCollider.active = true;
+      this.autoWalk = null;
+      resolve();
+      return;
+    }
+    const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, targetX, targetY);
+    this.player.body.setVelocity(Math.cos(angle) * SPEED, Math.sin(angle) * SPEED);
+    this.player.setFlipX(Math.cos(angle) < 0);
+    this.playerShadow.setPosition(this.player.x, this.player.y + 20);
   }
 
   openDialogue(npc) {
@@ -269,6 +401,10 @@ export class Bank extends Phaser.Scene {
   // --- loop ----------------------------------------------------------------
 
   update() {
+    if (this.autoWalk) {
+      this.stepAutoWalk();
+      return;
+    }
     if (!this.inDialogue) {
       this.movePlayer();
       this.showPrompt(this.nearestNpc());

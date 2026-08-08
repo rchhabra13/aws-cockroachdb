@@ -1,12 +1,12 @@
-"""Dialogue provider selection, with a local fallback.
+"""Dialogue provider selection, with a fallback.
 
-LLM_PROVIDER picks the primary: lmstudio, gemini, or bedrock. Imports are deferred so an
+LLM_PROVIDER picks the primary: gemini or bedrock. Imports are deferred so an
 unconfigured provider — Bedrock on an account without model access, say — cannot break
 startup for the others.
 
 When LLM_FALLBACK_ENABLED is set, a primary that raises falls back to
 LLM_FALLBACK_PROVIDER instead of failing the turn. A hosted provider can be rate limited,
-unauthorized, or simply offline mid demo; falling back to the local model keeps the
+unauthorized, or simply offline mid demo; falling back to the other provider keeps the
 scenario running. Fallback is deliberately not silent — it logs which provider answered.
 """
 
@@ -18,9 +18,7 @@ log = logging.getLogger(__name__)
 
 
 def _impl(provider: str):
-    if provider == "lmstudio":
-        from app.providers.lmstudio import generate_dialogue as impl
-    elif provider == "gemini":
+    if provider == "gemini":
         from app.providers.gemini import generate_dialogue as impl
     elif provider == "bedrock":
         from app.providers.bedrock import generate_dialogue as impl

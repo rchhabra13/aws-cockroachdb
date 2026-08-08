@@ -18,6 +18,27 @@ router = APIRouter(prefix="/world", tags=["world"])
 
 AUTHORIZATION_SUMMARY = "The branch manager authorized a security test by this player."
 
+# Interaction/memory tables cleared by /world/reset, in child-before-parent order (DELETE
+# has no CASCADE keyword, unlike TRUNCATE). branches, npcs, players are fixtures and stay,
+# so the demo world remains playable immediately after a reset.
+#
+# Deliberately DELETE FROM rather than TRUNCATE: CockroachDB implements TRUNCATE as a
+# schema change (drop + recreate the table), which spawns a background "SCHEMA CHANGE GC"
+# job per table. Clicking the reset button a few times in a row during testing queued up
+# enough of these that a later TRUNCATE failed with "cannot perform TRUNCATE on ... which
+# has indexes being dropped" — a live schema change colliding with a new one. DELETE FROM
+# is a plain MVCC write, no schema change, no job, safe to call repeatedly.
+RESET_TABLES = [
+    "messages",
+    "memory_embeddings",
+    "agent_checkpoints",
+    "relationships",
+    "promises",
+    "shared_branch_events",
+    "conversations",
+    "incidents",
+]
+
 
 class AuthorizeRequest(BaseModel):
     branch_id: UUID
@@ -79,3 +100,15 @@ async def withdraw_event(event_id: UUID) -> dict:
     if deleted.split()[-1] == "0":
         raise HTTPException(status_code=404, detail="event not found")
     return {"withdrawn": str(event_id)}
+
+
+@router.delete("/reset")
+async def reset_world() -> dict:
+    """Wipe every character's memory and every branch event. Fixtures (branches, npcs,
+    players) are kept so the demo stays playable with a clean slate."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            for table in RESET_TABLES:
+                await conn.execute(f"DELETE FROM {table} WHERE true")
+    return {"cleared": RESET_TABLES}

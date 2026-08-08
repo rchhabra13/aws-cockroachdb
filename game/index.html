@@ -62,12 +62,28 @@
   #composer button { background: var(--accent); color: #fff; border: 0; border-radius: 8px;
     padding: 0 16px; font-weight: 600; cursor: pointer; }
   #composer button:disabled { opacity: .5; cursor: default; }
+
+  #toolbar { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 10;
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+  #toolbar button { background: #1a2440; color: #9db4ff; border: 1px solid #2a3a66;
+    border-radius: 999px; padding: 7px 13px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  #toolbar button:hover { background: #22305a; }
+  #toolbar button:disabled { opacity: .5; cursor: default; }
+  #reset-db { background: #2a1420 !important; color: #ff8fa3 !important; border-color: #4a2230 !important; }
+  #reset-db:hover { background: #3a1a29 !important; }
 </style>
 
 <div id="app">
   <div id="stage">
     <div id="game-container"></div>
     <div id="hint"><b>Arrows / WASD</b> to walk &nbsp;·&nbsp; <b>E</b> to talk when close &nbsp;·&nbsp; <b>Esc</b> to leave</div>
+    <div id="toolbar">
+      <button id="scenario-fraud" title="Rich-customer impersonation pressuring Daniel Okafor past verification.">Fraud &amp; Security ▶</button>
+      <button id="scenario-lending" title="Loan application to Priya Shah with a self-contradicting income figure.">Credit &amp; Lending ▶</button>
+      <button id="scenario-cx" title="Routine account questions to Marge, then a probe for what Omar was told.">Customer Experience ▶</button>
+      <button id="scenario-ops" title="Large cash deposit to Ruth Alvarez, edging toward a structuring pattern.">Operations &amp; Treasury ▶</button>
+      <button id="reset-db" title="Wipe all memory and events. Branches/NPCs/players stay.">Clear DB</button>
+    </div>
   </div>
 
   <aside id="inspector">
