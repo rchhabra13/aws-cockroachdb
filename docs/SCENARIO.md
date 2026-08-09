@@ -23,14 +23,17 @@ receive the authorization but not the manager's private transcript.
 |---|---|---|
 | Player One | Player | The fixed demo identity created by the seed data |
 | Marge | Teller | Her private conversations with the player; teller-visible events |
+| Omar Reed | Teller | His private conversations with the player; teller-visible events |
 | Daniel Okafor | Manager | His private conversations with the player; manager-visible events |
+| Priya Shah | Loan officer | Her private conversations with the player; loan-officer-visible events |
 | Ruth Alvarez | Security guard | Her private conversations with the player; guard-visible events |
+| Grace Okonkwo | Compliance | Her private conversations with the player; compliance-visible events |
+| Victor Cross | Wealth advisor | His private conversations with the player; advisor-visible events |
 
-All four are created by `schema/seed.sql` with stable identifiers, so the scenario
-survives a database reset. The seed also adds a second teller (Omar Reed), a loan officer
-(Priya Shah), a compliance officer (Grace Okonkwo), and a wealth advisor (Victor Cross) —
-seven characters in all — so the game client can demonstrate isolation between two NPCs of
-the same role and route compliance events to the desks entitled to them.
+All seven are created by `schema/seed.sql` with stable identifiers, so the scenario
+survives a database reset. Two of them share a role (Marge and Omar are both tellers), so
+the game client can demonstrate isolation between two NPCs of the same role, not only
+across roles.
 
 ## Memory model
 
@@ -85,22 +88,23 @@ retrieval path is broken for everyone.
 The player refers to the earlier request using different wording.
 
 **Available for paraphrase. Not available for anaphoric reference.** Measured against the
-stored message `"Morning. I would like to check my account balance."` with
-`all-MiniLM-L6-v2` and the 0.25 floor:
+stored message `"Morning. I would like to check my account balance."` with Titan Text
+Embeddings V2 (1024 dims) and the 0.25 floor:
 
 | Query | Similarity | Recalled |
 |---|---|---|
-| `how much money is in my account?` | 0.476 | yes |
-| `can you help me with my balance?` | 0.399 | yes |
-| `Sorry, what was I asking you about a moment ago?` | 0.165 | no |
-| `remind me what I came in for` | 0.105 | no |
-| `what did we just talk about?` | 0.034 | no |
-| `what is the weather like on Jupiter` (control) | 0.063 | no |
+| `how much money is in my account?` | 0.359 | yes |
+| `can you help me with my balance?` | 0.319 | yes |
+| `remind me what I came in for` | 0.193 | no |
+| `Sorry, what was I asking you about?` | 0.076 | no |
+| `did the manager say anything about me?` (control) | 0.054 | no |
+| `what did we just talk about?` | 0.041 | no |
+| `what is the weather like on Jupiter` (control) | 0.020 | no |
 
 A paraphrase that carries the topic is retrieved. A pure pointer back to the conversation
 carries no topic to embed, so it scores at noise level — `what did we just talk about?`
-(0.034) ranks *below* the unrelated Jupiter control (0.063). Lowering the floor cannot fix
-this without admitting everything.
+(0.041) sits below both unrelated controls. Lowering the floor cannot fix this without
+admitting everything.
 
 The cause is architectural, not a threshold problem: **the prompt contains no conversation
 history**. `compose_system_prompt()` is built entirely from vector-search hits, so a turn
@@ -171,6 +175,20 @@ the event and no longer treats the security test as authorized.
 memory row. There is no revocation timestamp or event history — withdrawal destroys the
 record rather than retiring it, which is fine for a demo and wrong for production.
 
+### Resetting the world
+
+`DELETE /world/reset` wipes every interaction/memory table (messages, memory_embeddings,
+agent_checkpoints, relationships, promises, shared_branch_events, conversations,
+incidents) while keeping the fixture tables (branches, npcs, players), so the demo world
+is playable again immediately with every character's memory empty. It uses `DELETE FROM`
+rather than `TRUNCATE`: CockroachDB implements `TRUNCATE` as a schema change, and repeated
+truncation during testing queued up background schema-change jobs that later collided.
+
+Two related endpoints manage a single play session rather than the whole world:
+`DELETE /world/session/{session_id}` tears down one session's rows (called when a player
+leaves), and `POST /world/session/sweep` reaps conversations a player opened but never
+spoke in.
+
 ### Stage 9: Restart during a session
 
 The backend restarts while a conversation is active. Stored messages and memory rows
@@ -189,8 +207,9 @@ recollection.
 
 **Roadmap.** An earlier hand-written auditor endpoint was removed: it joined shared events
 to incidents through a column `publish_shared_event()` never populates, so it returned an
-empty result in every case. The replacement queries CockroachDB through the Cloud Managed
-MCP Server instead.
+empty result in every case. `.mcp.json` configures the CockroachDB Cloud Managed MCP
+Server as its intended replacement, but authentication has not been completed and no
+querying code exists yet.
 
 ## Component status
 
@@ -201,7 +220,7 @@ MCP Server instead.
 | Shared memory | Server-owned role mapping, shared-event recall, publish and withdraw routes | Automatic publication, event lifecycle, branch constraint in recall |
 | World state | Tables for incidents, promises, checkpoints | Services that create, update, and consume those records |
 | Observability | Dialogue returns the exact prompt used; the UI renders it | Persisted per-turn traces; MCP auditor |
-| User interface | Phaser game client: walk-and-talk bank branch, chat, memory inspector | Deployment configuration |
+| User interface | Phaser game client: walk-and-talk bank branch, chat, memory inspector, per-session memory isolation, six scripted scenarios with explainer popups | Deployment configuration |
 | Deployment | Backend Dockerfile; Compose for local use | AWS deployment, game client hosting |
 
 ## Known limitations
@@ -217,13 +236,19 @@ MCP Server instead.
 5. `relationships` and `promises` are defined but unread by any code.
 6. `CORSMiddleware` allows every origin. Correct for a local demo, not for a public
    deployment.
+7. `roles.py` defines `suspicion` and `structuring` event types, but no route publishes
+   them — `POST /world/authorize` only ever publishes `authorization`. The "Smurfing the
+   Deposit" scripted scenario demonstrates the private-memory side of a structuring
+   attempt (it deliberately never reaches the Shared panel), not the published event
+   itself. `structuring`/`suspicion` are reachable only by calling `publish_shared_event()`
+   directly, not through the API.
 
 ## Relevant files
 
 | File | Responsibility |
 |---|---|
 | `backend/app/routers/dialogue.py` | Dialogue orchestration and message persistence |
-| `backend/app/routers/world.py` | Authorization publish, list, and withdraw |
+| `backend/app/routers/world.py` | Authorization publish/list/withdraw, world reset, session teardown |
 | `backend/app/memory/retrieval.py` | Private and role-scoped recall queries |
 | `backend/app/memory/publish.py` | Shared-event publication |
 | `backend/app/prompts.py` | Prompt composition and memory provenance labels |

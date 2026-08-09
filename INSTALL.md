@@ -85,3 +85,27 @@ python scripts/verify.py
 
 Runs the isolation test suite against the live backend — private memories don't cross
 characters, shared events reach only the roles in their audience.
+
+## Troubleshooting
+
+**`IsADirectoryError: [Errno 21] Is a directory` on backend startup.** `docker-compose.yml`
+bind-mounts `~/.postgresql/root.crt` (the CockroachDB Cloud CA cert) into the container. If
+that path doesn't exist on your host, Docker silently creates an empty *directory* there
+instead of failing, so the container sees a directory where a cert file should be. Fix:
+
+```bash
+rm -rf ~/.postgresql/root.crt   # remove the phantom directory, if present
+mkdir -p ~/.postgresql
+curl -o ~/.postgresql/root.crt 'https://cockroachlabs.cloud/clusters/<cluster-id>/cert'
+docker compose down && docker compose up --build backend   # re-resolve the mount
+```
+
+`root.crt` is just the cluster's public CA certificate — not a secret — so it's fine to
+copy it from a teammate instead of downloading your own.
+
+To skip the cert entirely, drop `sslmode=verify-full` to `sslmode=require` in
+`COCKROACHDB_URL` — still encrypted, just no server-identity check. Fine for local dev.
+
+**`Connection refused` / `Cannot assign requested address`.** `COCKROACHDB_URL` is still
+the `.env.example` placeholder (`postgresql://root@localhost:26257/...`). Replace it with
+the real cluster URL from `bootstrap.sh`'s output.
