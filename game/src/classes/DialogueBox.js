@@ -1,5 +1,9 @@
 // In-canvas panel that shows the exchange: the player's line on top, then the character's
 // spoken reply below. Player input is typed in the DOM composer; this box is display-only.
+//
+// Replies can run several paragraphs (numbered lists, multi-step explanations); the box
+// itself stays a fixed height, so the reply text is clipped to a content area and scrolls
+// with the mouse wheel when it overflows, instead of spilling out past the box border.
 export default class DialogueBox {
   constructor(scene) {
     const w = scene.scale.width;
@@ -7,6 +11,13 @@ export default class DialogueBox {
     const boxH = 170;
     const pad = 24;
     const top = h - boxH - pad;
+
+    const headerH = 80;
+    const bottomPad = 14;
+    this.contentX = pad + 18;
+    this.contentY = top + headerH;
+    this.contentW = w - pad * 2 - 36;
+    this.contentH = boxH - headerH - bottomPad;
 
     this.g = scene.add.graphics().setScrollFactor(0).setDepth(40);
     this.g.fillStyle(0x000000, 0.8);
@@ -25,16 +36,54 @@ export default class DialogueBox {
       .setDepth(41);
 
     this.text = scene.add
-      .text(pad + 18, top + 80, "", {
+      .text(this.contentX, this.contentY, "", {
         font: "16px monospace",
         color: "#e7e9ee",
-        wordWrap: { width: w - pad * 2 - 36 },
+        wordWrap: { width: this.contentW },
         lineSpacing: 4,
       })
       .setScrollFactor(0)
       .setDepth(41);
 
+    const maskShape = scene.make.graphics({}, false);
+    maskShape.fillStyle(0xffffff);
+    maskShape.fillRect(this.contentX, this.contentY, this.contentW, this.contentH);
+    this.text.setMask(maskShape.createGeometryMask());
+
+    this.hint = scene.add
+      .text(w - pad - 8, top + boxH - 8, "↕ scroll for more", { font: "11px monospace", color: "#6d7690" })
+      .setOrigin(1, 1)
+      .setScrollFactor(0)
+      .setDepth(41)
+      .setVisible(false);
+
+    this.scrollOffset = 0;
+    this.pinnedToBottom = true;
+
+    scene.input.on("wheel", (pointer, _objs, _dx, dy) => {
+      if (!this._visible) return;
+      if (pointer.x < pad || pointer.x > w - pad || pointer.y < top || pointer.y > top + boxH) return;
+      const maxScroll = Math.max(0, this.text.height - this.contentH);
+      this.scrollOffset = Phaser.Math.Clamp(this.scrollOffset + dy * 0.4, 0, maxScroll);
+      this.pinnedToBottom = this.scrollOffset >= maxScroll - 1;
+      this.applyScroll(maxScroll);
+    });
+
     this.hide();
+  }
+
+  applyScroll(maxScroll) {
+    this.text.y = this.contentY - this.scrollOffset;
+    this.hint.setVisible(this._visible && maxScroll > 0);
+  }
+
+  // Recomputes scroll bounds after the reply text changes. While the reply is still
+  // streaming in, autoscroll keeps the newest text visible unless the player has
+  // deliberately scrolled up to reread something earlier.
+  refreshScroll() {
+    const maxScroll = Math.max(0, this.text.height - this.contentH);
+    this.scrollOffset = this.pinnedToBottom ? maxScroll : Math.min(this.scrollOffset, maxScroll);
+    this.applyScroll(maxScroll);
   }
 
   setYou(text) {
@@ -44,17 +93,21 @@ export default class DialogueBox {
   show(speaker, message) {
     this.speaker.setText(speaker);
     this.text.setText(message);
+    this.scrollOffset = 0;
+    this.pinnedToBottom = true;
     this._visible = true;
     [this.g, this.you, this.speaker, this.text].forEach((o) => o.setVisible(true));
+    this.refreshScroll();
   }
 
   setReply(message) {
     this.text.setText(message);
+    this.refreshScroll();
   }
 
   hide() {
     this._visible = false;
-    [this.g, this.you, this.speaker, this.text].forEach((o) => o.setVisible(false));
+    [this.g, this.you, this.speaker, this.text, this.hint].forEach((o) => o.setVisible(false));
   }
 
   isVisible() {

@@ -48,6 +48,21 @@ export class Boot extends Phaser.Scene {
       // name-badge dot
       g.fillStyle(0xffffff, 1);
       g.fillCircle(12, 27, 2.5);
+    } else if (role === "compliance") {
+      // clipboard held to the chest
+      g.fillStyle(0xf4f4f5, 1);
+      g.fillRoundedRect(12, 24, 12, 15, 2);
+      g.fillStyle(0x11151f, 1);
+      g.fillRect(14, 27, 8, 1.5);
+      g.fillRect(14, 30, 8, 1.5);
+      g.fillRect(14, 33, 6, 1.5);
+    } else if (role === "advisor") {
+      // pocket square + bow tie
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(22, 24, 4, 4);
+      g.fillStyle(0x11151f, 1);
+      g.fillTriangle(18, 21, 14, 19, 14, 23);
+      g.fillTriangle(18, 21, 22, 19, 22, 23);
     }
 
     g.lineStyle(2, 0x000000, 0.25);

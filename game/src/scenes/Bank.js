@@ -87,26 +87,44 @@ export class Bank extends Phaser.Scene {
 
   drawFloor() {
     const g = this.add.graphics().setDepth(0);
-    const tile = 32;
+    // Warm marble-checker lobby floor with a subtly lighter runner down the middle.
+    const tile = 48;
     for (let y = 0; y < H; y += tile) {
       for (let x = 0; x < W; x += tile) {
-        g.fillStyle((x / tile + y / tile) % 2 ? 0x1b2030 : 0x181c29, 1);
+        const alt = (x / tile + y / tile) % 2;
+        g.fillStyle(alt ? 0x20242f : 0x1a1e27, 1);
         g.fillRect(x, y, tile, tile);
+        // faint grout highlight
+        g.fillStyle(0x2b3140, 0.25);
+        g.fillRect(x, y, tile, 1);
+        g.fillRect(x, y, 1, tile);
       }
     }
+    // entrance runner from the doors up into the lobby
+    g.fillStyle(0x24304a, 0.35);
+    g.fillRect(540, 300, 160, H - 300);
   }
 
   // A solid, collidable block that is also drawn. label is optional floor text.
-  block(x, y, w, h, color, label) {
+  block(x, y, w, h, color, label, labelColor = "#c6ccdb") {
     const r = this.add.rectangle(x, y, w, h, color).setDepth(2);
     this.walls.add(r);
     if (label) {
       this.add
-        .text(x, y, label, { font: "12px monospace", color: "#c6ccdb" })
+        .text(x, y, label, { font: "bold 11px monospace", color: labelColor })
         .setOrigin(0.5)
         .setDepth(3);
     }
     return r;
+  }
+
+  // A labelled sign hung above a work area — non-colliding, so it reads as signage rather
+  // than a wall the player bumps into.
+  sign(x, y, text, color = 0x9d7bff) {
+    this.add.rectangle(x, y, text.length * 8 + 16, 18, 0x0d1017).setDepth(6)
+      .setStrokeStyle(1, color, 0.5);
+    this.add.text(x, y, text, { font: "bold 10px monospace", color: "#dfe3ec" })
+      .setOrigin(0.5).setDepth(7);
   }
 
   drawFurniture() {
@@ -117,26 +135,87 @@ export class Bank extends Phaser.Scene {
     this.block(t / 2, H / 2, t, H, 0x2b3242);
     this.block(W - t / 2, H / 2, t, H, 0x2b3242);
 
-    // teller counter — two windows, Marge and Omar stand behind it
-    this.block(395, 360, 360, 26, 0x3a4256, "TELLERS");
-    // manager office: corner walls plus a desk in front
-    this.block(690, 120, 12, 210, 0x2b3242);
-    this.block(840, 324, 300, 12, 0x2b3242);
-    this.block(780, 272, 150, 22, 0x3a4256, "MANAGER");
-    // loan desk, left side
-    this.block(210, 488, 170, 22, 0x3a4256, "LOANS");
-    // vault, bottom-left corner
-    this.block(110, 675, 150, 80, 0x11151f, "VAULT");
-    // security rail near the doors
-    this.block(620, 604, 190, 14, 0x3a4256, "SECURITY");
+    // --- teller line: long counter with two windows (Marge, Omar behind it) ---
+    this.block(400, 348, 360, 22, 0x6b5330, "TELLERS", "#f0e2c0"); // wood counter
+    this.sign(400, 250, "TELLER  WINDOWS");
+
+    // --- manager office, top-right: L of walls + a desk in front ---
+    this.block(720, 120, 12, 200, 0x2b3242);
+    this.block(866, 314, 310, 12, 0x2b3242);
+    this.block(812, 250, 150, 20, 0x6b5330, "MANAGER", "#f0e2c0");
+    this.sign(812, 150, "BRANCH MANAGER");
+
+    // --- loans desk, left ---
+    this.block(196, 484, 170, 20, 0x6b5330, "LOANS", "#f0e2c0");
+    this.sign(196, 388, "LOAN  OFFICE");
+
+    // --- compliance office, right-mid ---
+    this.block(788, 440, 12, 150, 0x2b3242);
+    this.block(840, 524, 150, 20, 0x14b8a6, "COMPLIANCE", "#eafffb");
+    this.sign(858, 410, "COMPLIANCE");
+
+    // --- wealth advisor, lower-left ---
+    this.block(196, 664, 170, 20, 0xeab308, "WEALTH", "#3a2e05");
+    this.sign(196, 560, "WEALTH  ADVISORY");
+
+    // --- vault, bottom-left corner ---
+    this.block(96, 700, 150, 96, 0x11151f, "VAULT", "#8b93a7");
+    this.add.circle(96, 700, 16, 0x2b3242).setDepth(3).setStrokeStyle(3, 0x4a5468); // vault dial
+
+    // --- security post, center-lower ---
+    this.block(600, 636, 180, 14, 0x3a4256, "SECURITY");
+    this.sign(600, 660, "SECURITY");
 
     this.drawDecor();
   }
 
-  // Non-colliding dressing: entrance mat and a couple of potted plants, so the lobby reads
-  // as a room rather than a grid. Purely visual — not added to the walls group.
+  // Non-colliding dressing: teller glass partitions, an ATM, a wall clock, rope dividers,
+  // an entrance mat and potted plants — so the lobby reads as a branch, not a grid.
   drawDecor() {
-    this.add.rectangle(620, 736, 140, 44, 0x232a3a).setDepth(1);
+    // teller glass partitions (thin translucent dividers between the two windows)
+    const glass = this.add.graphics().setDepth(6);
+    glass.fillStyle(0x9fd8ff, 0.14);
+    glass.fillRect(408, 300, 4, 48);
+    glass.fillRect(300, 300, 4, 48);
+    glass.fillRect(516, 300, 4, 48);
+
+    // ATM kiosk near the entrance (right of the doors)
+    const atm = this.add.graphics().setDepth(2);
+    atm.fillStyle(0x2d3446, 1);
+    atm.fillRoundedRect(724, 700, 60, 56, 6);
+    atm.fillStyle(0x35c48a, 0.85);
+    atm.fillRect(736, 712, 36, 20); // screen
+    atm.fillStyle(0x11151f, 1);
+    atm.fillRect(740, 738, 28, 6); // keypad
+    this.add.text(754, 690, "ATM", { font: "bold 10px monospace", color: "#8b93a7" })
+      .setOrigin(0.5).setDepth(3);
+
+    // wall clock (top wall)
+    const clock = this.add.graphics().setDepth(3);
+    clock.fillStyle(0x0d1017, 1);
+    clock.fillCircle(512, 40, 14);
+    clock.lineStyle(2, 0x8b93a7, 1);
+    clock.strokeCircle(512, 40, 14);
+    clock.lineBetween(512, 40, 512, 32);
+    clock.lineBetween(512, 40, 519, 43);
+
+    // entrance mat (bottom-center, between the doors)
+    this.add.rectangle(620, 748, 150, 34, 0x232a3a).setDepth(1)
+      .setStrokeStyle(1, 0x3a4256);
+    this.add.text(620, 748, "WELCOME", { font: "bold 9px monospace", color: "#5b6478" })
+      .setOrigin(0.5).setDepth(2);
+
+    // stanchion rope guiding the queue toward the tellers
+    const rope = this.add.graphics().setDepth(3);
+    [460, 540, 620].forEach((x) => {
+      rope.fillStyle(0x6b7488, 1);
+      rope.fillCircle(x, 470, 4);
+      rope.fillCircle(x, 540, 4);
+    });
+    rope.lineStyle(2, 0xd4af37, 0.6);
+    rope.lineBetween(460, 470, 620, 470);
+    rope.lineBetween(460, 540, 620, 540);
+
     const plant = (x, y) => {
       const g = this.add.graphics().setDepth(3);
       g.fillStyle(0x2a3550, 1);
@@ -148,8 +227,8 @@ export class Bank extends Phaser.Scene {
       g.fillCircle(x + 7, y - 12, 7);
     };
     plant(60, 60);
-    plant(964, 700);
     plant(964, 60);
+    plant(964, 620);
   }
 
   // --- dialogue ------------------------------------------------------------
@@ -214,52 +293,106 @@ export class Bank extends Phaser.Scene {
     });
   }
 
-  // Wires one button per entry in SCENARIOS. Each steps through its own script against its
-  // own target NPC, one line per click, so the memory inspector's private panel can be
-  // watched growing turn over turn instead of firing the whole script at once. Walks the
-  // player to the target on the first click (or on switching targets mid-scenario); wraps
-  // back to the start once its script is exhausted. this.pending / this.autoWalk are scene-
-  // wide, so clicking a different scenario's button mid-run is simply ignored until free.
+  // Builds the top scenario bar from SCENARIOS and wires the explainer modal. Flow:
+  //   click a scenario button (fresh)  -> open its explainer modal
+  //   modal "Run scenario"             -> begin: walk to step 1's target, send line 1
+  //   click the same button (mid-run)  -> send the next line (one turn per click, so the
+  //                                        inspector's private panel can be watched growing)
+  //   button after the last line       -> shows "done ↺"; clicking reopens the modal
+  // A step is a plain string (spoken to scenario.target) or { to, text } to switch NPCs
+  // mid-scenario — the runner walks the player over before speaking.
   bindScenarioButtons() {
-    SCENARIOS.forEach((scenario) => {
-      const btn = document.getElementById(`scenario-${scenario.key}`);
-      if (!btn) return;
-      const label = btn.textContent;
-      let step = 0;
-
-      btn.addEventListener("click", async () => {
-        if (this.pending || this.autoWalk) return;
-
-        if (step >= scenario.script.length) {
-          step = 0;
-          btn.textContent = label;
-          return;
-        }
-
-        const target = this.characters.find((c) => c.name === scenario.target);
-        if (!target) return;
-
-        btn.disabled = true;
-        if (!this.inDialogue || this.activeNpc !== target) {
-          if (this.inDialogue) this.closeDialogue();
-          btn.textContent = "Walking over…";
-          await this.walkTo(target);
-          this.openDialogue(target);
-        }
-
-        this.msgEl.value = scenario.script[step];
-        step += 1;
-        try {
-          await this.sendMessage();
-        } finally {
-          btn.disabled = false;
-          btn.textContent =
-            step < scenario.script.length
-              ? `${scenario.label} (${step}/${scenario.script.length}) ▶`
-              : `${scenario.label} — done ↺`;
-        }
-      });
+    const bar = document.getElementById("scenario-bar");
+    this.scenarioState = {};
+    SCENARIOS.forEach((scenario, i) => {
+      this.scenarioState[scenario.key] = 0;
+      const btn = document.createElement("button");
+      btn.className = "sc-btn";
+      btn.id = `sc-${scenario.key}`;
+      btn.title = scenario.title;
+      btn.innerHTML = `<span class="num">${i + 1}</span>${scenario.label}`;
+      btn.addEventListener("click", () => this.onScenarioClick(scenario, btn));
+      bar.appendChild(btn);
     });
+    this.bindModal();
+  }
+
+  bindModal() {
+    this.modalEl = document.getElementById("modal");
+    document.getElementById("modal-cancel").addEventListener("click", () => this.closeModal());
+    this.modalEl.addEventListener("click", (e) => {
+      if (e.target === this.modalEl) this.closeModal();
+    });
+    this.modalRunBtn = document.getElementById("modal-run");
+  }
+
+  onScenarioClick(scenario, btn) {
+    if (this.pending || this.autoWalk) return;
+    const step = this.scenarioState[scenario.key];
+    // Fresh or finished: show the explainer, let the player start it from there.
+    if (step === 0 || step >= scenario.script.length) {
+      this.scenarioState[scenario.key] = 0;
+      this.openModal(scenario, btn);
+      return;
+    }
+    // Mid-run: advance one line.
+    this.advanceScenario(scenario, btn);
+  }
+
+  openModal(scenario, btn) {
+    document.getElementById("modal-tag").textContent = scenario.tag;
+    document.getElementById("modal-title").textContent = scenario.title;
+    document.getElementById("modal-situation").textContent = scenario.situation;
+    document.getElementById("modal-proves").textContent = scenario.proves;
+    document.getElementById("modal-crdb").textContent = scenario.cockroach;
+    document.getElementById("modal-watch").textContent = scenario.watch;
+    // Rebind Run fresh each open so it targets this scenario.
+    const run = this.modalRunBtn.cloneNode(true);
+    this.modalRunBtn.replaceWith(run);
+    this.modalRunBtn = run;
+    run.addEventListener("click", () => {
+      this.closeModal();
+      this.advanceScenario(scenario, btn);
+    });
+    this.modalEl.classList.add("on");
+  }
+
+  closeModal() {
+    this.modalEl.classList.remove("on");
+  }
+
+  // Sends the current step's line, walking to that step's target first if needed.
+  async advanceScenario(scenario, btn) {
+    if (this.pending || this.autoWalk) return;
+    const step = this.scenarioState[scenario.key];
+    if (step >= scenario.script.length) return;
+
+    const entry = scenario.script[step];
+    const text = typeof entry === "string" ? entry : entry.text;
+    const targetName = typeof entry === "string" ? scenario.target : entry.to;
+    const target = this.characters.find((c) => c.name === targetName);
+    if (!target) return;
+
+    btn.disabled = true;
+    if (!this.inDialogue || this.activeNpc !== target) {
+      if (this.inDialogue) this.closeDialogue();
+      btn.innerHTML = `<span class="num">→</span>walking to ${target.name.split(" ")[0]}…`;
+      await this.walkTo(target);
+      this.openDialogue(target);
+    }
+
+    this.msgEl.value = text;
+    this.scenarioState[scenario.key] = step + 1;
+    try {
+      await this.sendMessage();
+    } finally {
+      btn.disabled = false;
+      const done = this.scenarioState[scenario.key] >= scenario.script.length;
+      const n = this.scenarioState[scenario.key];
+      btn.innerHTML = done
+        ? `<span class="num">↺</span>${scenario.label} · done`
+        : `<span class="num">${n}/${scenario.script.length}</span>${scenario.label} · next`;
+    }
   }
 
   // Moves the player toward npc using the same velocity-driven movement as manual walking

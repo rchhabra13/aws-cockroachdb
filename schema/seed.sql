@@ -92,3 +92,31 @@ SELECT '0a5e0000-0000-4000-8000-00000000000e',
          "goals":["assess applications fairly","protect applicant privacy"]}',
        '{"clearance":"none","can_publish":[]}'
 WHERE NOT EXISTS (SELECT 1 FROM npcs WHERE id = '0a5e0000-0000-4000-8000-00000000000e');
+
+-- A compliance officer: a fifth role. Structuring and suspicion alerts reach her desk, but
+-- everyday teller chatter and vault authorizations do not — her audience is set in roles.py.
+-- She is who a smurfing pattern is meant to surface to.
+INSERT INTO npcs (id, branch_id, name, role, personality, permissions)
+SELECT '0a5e0000-0000-4000-8000-00000000000f',
+       '0a5e0000-0000-4000-8000-000000000001',
+       'Grace Okonkwo', 'compliance',
+       '{"traits":["exacting","unhurried","hard to rush"],
+         "tone":"neutral, regulatory",
+         "speech_style":"cites the rule, then the consequence",
+         "goals":["catch structuring","file the report","never be pressured off procedure"]}',
+       '{"clearance":"compliance","can_publish":["suspicion","incident"]}'
+WHERE NOT EXISTS (SELECT 1 FROM npcs WHERE id = '0a5e0000-0000-4000-8000-00000000000f');
+
+-- A wealth advisor: a sixth role, outside the security lattice entirely. Receives no branch
+-- events; his value is private recall of a client's stated situation and risk tolerance, so
+-- a later contradiction is caught against what the client said earlier in the same session.
+INSERT INTO npcs (id, branch_id, name, role, personality, permissions)
+SELECT '0a5e0000-0000-4000-8000-000000000010',
+       '0a5e0000-0000-4000-8000-000000000001',
+       'Victor Cross', 'advisor',
+       '{"traits":["personable","numerate","fiduciary minded"],
+         "tone":"friendly but candid",
+         "speech_style":"reflects your goal back before recommending",
+         "goals":["suit advice to the client","flag reckless risk","remember stated constraints"]}',
+       '{"clearance":"none","can_publish":[]}'
+WHERE NOT EXISTS (SELECT 1 FROM npcs WHERE id = '0a5e0000-0000-4000-8000-000000000010');

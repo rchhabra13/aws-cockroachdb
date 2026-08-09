@@ -38,14 +38,29 @@ class Api {
     });
   }
 
-  // Publish a manager authorization the guard can later recall. Used by the demo control.
+  // Publish a manager authorization the guard can later recall. Scoped to this session so a
+  // guard in another session does not inherit it. Used by the demo control.
   authorize(summary) {
-    return this.post("/world/authorize", { branch_id: BRANCH_ID, player_id: PLAYER_ID, summary });
+    return this.post("/world/authorize", {
+      branch_id: BRANCH_ID,
+      player_id: PLAYER_ID,
+      session_id: SESSION_ID,
+      summary,
+    });
   }
 
   // Wipe all memory/events, keep the branch/npc/player fixtures. Used by the reset button.
   resetWorld() {
     return this.del("/world/reset");
+  }
+
+  // Tear down this play session's collection. Called on tab close via keepalive so the
+  // request still goes out while the page is unloading; a normal fetch would be cancelled.
+  endSession() {
+    return fetch(`${API_URL}/world/session/${SESSION_ID}`, {
+      method: "DELETE",
+      keepalive: true,
+    });
   }
 }
 

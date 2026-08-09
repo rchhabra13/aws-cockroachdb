@@ -1,9 +1,9 @@
 """World actions: things the player does, rather than says.
 
-Also exposes the authorization lifecycle the demo needs. Withdrawal deletes the event and
-its memory row, because shared_branch_events has no revoked_at column yet. That is fine
-for a demo control but is not how a real system should retire an event, since it destroys
-the audit trail the auditor is supposed to read.
+Also exposes the authorization lifecycle the demo needs, plus session teardown and a reset.
+Withdrawal deletes the event and its memory row, because shared_branch_events has no
+revoked_at column yet. That is fine for a demo control but is not how a real system should
+retire an event, since it destroys the audit trail an event log would otherwise keep.
 """
 
 from uuid import UUID
@@ -43,6 +43,7 @@ RESET_TABLES = [
 class AuthorizeRequest(BaseModel):
     branch_id: UUID
     player_id: UUID
+    session_id: UUID | None = None
     summary: str = AUTHORIZATION_SUMMARY
 
 
@@ -50,7 +51,7 @@ class AuthorizeRequest(BaseModel):
 async def authorize(req: AuthorizeRequest) -> dict:
     """Publish a manager authorization, visible to guards and managers."""
     event_id = await publish_shared_event(
-        req.branch_id, req.player_id, "authorization", req.summary
+        req.branch_id, req.player_id, "authorization", req.summary, req.session_id
     )
     return {"event_id": str(event_id), "summary": req.summary}
 
@@ -112,3 +113,64 @@ async def reset_world() -> dict:
             for table in RESET_TABLES:
                 await conn.execute(f"DELETE FROM {table} WHERE true")
     return {"cleared": RESET_TABLES}
+
+
+async def _delete_session(conn, session_id: UUID) -> int:
+    """Delete every row belonging to one play session, child-before-parent. Returns the
+    number of memory rows removed. shared_branch_events carries no session_id column, so its
+    rows are found through the session-tagged shared_event memories that point at them."""
+    event_ids = [
+        r["id"]
+        for r in await conn.fetch(
+            """
+            SELECT source_id AS id FROM memory_embeddings
+            WHERE session_id = $1 AND source_type = 'shared_event'
+            """,
+            session_id,
+        )
+    ]
+    removed = await conn.fetch(
+        "DELETE FROM memory_embeddings WHERE session_id = $1 RETURNING id", session_id
+    )
+    await conn.execute(
+        """
+        DELETE FROM messages WHERE conversation_id IN
+            (SELECT id FROM conversations WHERE session_id = $1)
+        """,
+        session_id,
+    )
+    await conn.execute("DELETE FROM conversations WHERE session_id = $1", session_id)
+    await conn.execute("DELETE FROM agent_checkpoints WHERE session_id = $1", session_id)
+    if event_ids:
+        await conn.execute("DELETE FROM shared_branch_events WHERE id = ANY($1::UUID[])", event_ids)
+    return len(removed)
+
+
+@router.delete("/session/{session_id}")
+async def end_session(session_id: UUID) -> dict:
+    """Tear down one play session — called when a player leaves or closes the tab, so an
+    abandoned session's memories do not linger. Each session is its own collection; this
+    drops it whole."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            removed = await _delete_session(conn, session_id)
+    return {"ended": str(session_id), "memories_removed": removed}
+
+
+@router.post("/session/sweep")
+async def sweep_sessions() -> dict:
+    """Reap conversations that never produced a message — sessions a player opened but never
+    spoke in. Truly empty sessions leave no memory rows, only these orphan conversation
+    rows; this clears them so the table does not accrete dead sessions over a long demo."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            swept = await conn.fetch(
+                """
+                DELETE FROM conversations c
+                WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id)
+                RETURNING c.id
+                """
+            )
+    return {"swept_empty_conversations": len(swept)}

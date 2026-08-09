@@ -94,6 +94,11 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
     source_id UUID NOT NULL,
     npc_id UUID REFERENCES npcs (id),  -- null when the memory is branch-shared, not NPC-private
     player_id UUID REFERENCES players (id),
+    -- Which play session this memory belongs to. Each browser session is its own "collection":
+    -- recall filters on it so two sessions of the same player never see each other's history,
+    -- and session teardown deletes every row carrying its id. Nullable so server-side callers
+    -- that are not session-bound (verify.py, seed fixtures) can omit it and read across sessions.
+    session_id UUID,
     content STRING NOT NULL,
     -- Must match app/embeddings.py embedding_dim() for the configured provider:
     -- Bedrock Titan Text Embeddings V2 at 1024, or local all-MiniLM-L6-v2 at 384.
@@ -103,6 +108,9 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
 
 CREATE VECTOR INDEX IF NOT EXISTS memory_embeddings_vec_idx
     ON memory_embeddings (embedding);
+
+-- Session-scoped lookups: recall filtering and session teardown both key on session_id.
+CREATE INDEX IF NOT EXISTS memory_embeddings_session_idx ON memory_embeddings (session_id);
 
 -- LangGraph-style checkpoints so a conversation survives an EKS pod restart.
 -- idempotency_key lets the agent safely retry a write after a crash mid-turn.

@@ -17,7 +17,7 @@ async def dialogue(req: DialogueRequest) -> DialogueResponse:
     pool = await get_pool()
     npc = await pool.fetchrow("SELECT name, role, personality FROM npcs WHERE id = $1", req.npc_id)
 
-    memories = await recall(req.npc_id, req.player_id, req.message)
+    memories = await recall(req.npc_id, req.player_id, req.message, req.session_id)
     system_prompt = compose_system_prompt(
         npc["name"], npc["role"], npc["personality"], memories
     )
@@ -44,14 +44,14 @@ async def dialogue(req: DialogueRequest) -> DialogueResponse:
         conversation_id,
         req.message,
     )
-    await store_memory("message", player_msg["id"], req.message, req.npc_id, req.player_id)
+    await store_memory("message", player_msg["id"], req.message, req.npc_id, req.player_id, req.session_id)
 
     npc_msg = await pool.fetchrow(
         "INSERT INTO messages (conversation_id, speaker, content) VALUES ($1, 'npc', $2) RETURNING id",
         conversation_id,
         reply,
     )
-    await store_memory("message", npc_msg["id"], reply, req.npc_id, req.player_id)
+    await store_memory("message", npc_msg["id"], reply, req.npc_id, req.player_id, req.session_id)
 
     return DialogueResponse(
         npc_id=req.npc_id,

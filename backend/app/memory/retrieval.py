@@ -33,7 +33,9 @@ TOP_K = 8
 PRIVATE_SIMILARITY_FLOOR = 0.25
 
 
-async def recall(npc_id: UUID, player_id: UUID, query: str) -> list[MemoryHit]:
+async def recall(
+    npc_id: UUID, player_id: UUID, query: str, session_id: UUID | None = None
+) -> list[MemoryHit]:
     """Semantic recall scoped to what this NPC is allowed to know.
 
     Two separate queries rather than one. Private memories are this character's own and
@@ -49,6 +51,12 @@ async def recall(npc_id: UUID, player_id: UUID, query: str) -> list[MemoryHit]:
     decides whether it appears.
 
     Private memories belonging to another character are never returned by either query.
+
+    session_id, when given, scopes recall to a single play session: two sessions of the
+    same player never see each other's memories. When None the filter is skipped, so
+    server-side callers that are not session-bound (verify.py) read across all sessions.
+    The predicate is written `($6::UUID IS NULL OR m.session_id = $6)` so one query serves
+    both modes without string-building.
     """
     embedding = to_vector_literal(await asyncio.to_thread(embed_text, query))
     pool = await get_pool()
@@ -60,6 +68,7 @@ async def recall(npc_id: UUID, player_id: UUID, query: str) -> list[MemoryHit]:
         FROM memory_embeddings m
         WHERE m.player_id = $3
           AND m.npc_id = $2
+          AND ($6::UUID IS NULL OR m.session_id = $6)
           AND 1 - (m.embedding <=> $1::VECTOR) >= $5
         ORDER BY m.embedding <=> $1::VECTOR
         LIMIT $4
@@ -69,6 +78,7 @@ async def recall(npc_id: UUID, player_id: UUID, query: str) -> list[MemoryHit]:
         player_id,
         TOP_K,
         PRIVATE_SIMILARITY_FLOOR,
+        session_id,
     )
 
     shared = await pool.fetch(
@@ -81,6 +91,7 @@ async def recall(npc_id: UUID, player_id: UUID, query: str) -> list[MemoryHit]:
         JOIN npcs n ON n.id = $2
         WHERE m.player_id = $3
           AND m.npc_id IS NULL
+          AND ($5::UUID IS NULL OR m.session_id = $5)
           AND sbe.visible_to_roles ? n.role
         ORDER BY m.embedding <=> $1::VECTOR
         LIMIT $4
@@ -89,6 +100,7 @@ async def recall(npc_id: UUID, player_id: UUID, query: str) -> list[MemoryHit]:
         npc_id,
         player_id,
         TOP_K,
+        session_id,
     )
 
     hits = [

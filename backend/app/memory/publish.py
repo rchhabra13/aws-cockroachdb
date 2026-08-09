@@ -20,10 +20,13 @@ async def publish_shared_event(
     player_id: UUID,
     event_type: str,
     summary: str,
+    session_id: UUID | None = None,
 ) -> UUID:
     """Publish a branch event and make it semantically retrievable by entitled roles.
 
-    Visibility is derived from event_type, never taken from the caller.
+    Visibility is derived from event_type, never taken from the caller. session_id scopes
+    the event to one play session so a guard in another session does not recall it; None
+    leaves it session-agnostic (verify.py).
     """
     visible_to_roles = roles_for(event_type)
     pool = await get_pool()
@@ -41,5 +44,5 @@ async def publish_shared_event(
 
     # npc_id is None so no single character owns it; player_id is required because
     # recall() filters on it, and a shared memory without one is unreachable.
-    await store_memory("shared_event", event_id, summary, None, player_id)
+    await store_memory("shared_event", event_id, summary, None, player_id, session_id)
     return event_id

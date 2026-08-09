@@ -2,49 +2,83 @@
 <title>OmniNPC — Meridian Street Branch</title>
 <style>
   :root {
-    --bg: #0f1117;
-    --panel: #171a23;
+    --bg: #0e1016;
+    --panel: #161922;
+    --panel-2: #1b1f2b;
     --line: #262b38;
     --ink: #e7e9ee;
     --muted: #8b93a7;
     --accent: #6933ff;
+    --accent-soft: #9d7bff;
     --aws: #ff9900;
+    --teal: #14b8a6;
+    --gold: #d4af37;
+    --danger: #ff8fa3;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
     font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-  #app { display: grid; grid-template-columns: 1fr 380px; height: 100vh; }
+  #app { display: grid; grid-template-columns: 1fr 400px; height: 100vh; }
+
   #stage { position: relative; display: flex; align-items: center; justify-content: center;
     min-height: 0; overflow: hidden;
-    background: radial-gradient(1200px 800px at 40% 30%, #12151d, #0b0d12); }
+    background: radial-gradient(1200px 800px at 40% 25%, #14171f, #0a0c11); }
   #game-container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
   #game-container canvas { max-width: 100%; max-height: 100%;
-    box-shadow: 0 20px 60px rgba(0,0,0,.5); border-radius: 8px; }
+    box-shadow: 0 24px 70px rgba(0,0,0,.55); border-radius: 10px; }
+
+  /* top toolbar: scenario launchers + clear */
+  #toolbar { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 10;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  #brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px;
+    letter-spacing: .3px; color: var(--ink); margin-right: 6px; }
+  #brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--gold);
+    box-shadow: 0 0 10px var(--gold); }
+  #scenario-bar { display: flex; flex-wrap: wrap; gap: 7px; }
+  .sc-btn { background: linear-gradient(180deg, #1e2536, #182032); color: #cdd6ec;
+    border: 1px solid #2c3752; border-radius: 8px; padding: 7px 11px; font-size: 12px;
+    font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .sc-btn:hover { border-color: var(--accent-soft); color: #fff; }
+  .sc-btn:disabled { opacity: .5; cursor: default; }
+  .sc-btn .num { width: 16px; height: 16px; border-radius: 4px; background: #0c0e14;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 10px;
+    color: var(--accent-soft); }
+  #reset-db { margin-left: auto; background: #2a1420; color: var(--danger);
+    border: 1px solid #4a2230; border-radius: 8px; padding: 7px 12px; font-size: 12px;
+    font-weight: 600; cursor: pointer; }
+  #reset-db:hover { background: #3a1a29; }
+  #reset-db:disabled { opacity: .5; cursor: default; }
+
   #hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-    color: var(--muted); font-size: 13px; background: rgba(0,0,0,.45); padding: 6px 12px;
+    color: var(--muted); font-size: 13px; background: rgba(0,0,0,.5); padding: 6px 14px;
     border-radius: 999px; border: 1px solid var(--line); }
   #hint b { color: var(--ink); font-weight: 600; }
 
+  /* inspector */
   #inspector { background: var(--panel); border-left: 1px solid var(--line);
     display: flex; flex-direction: column; min-width: 0; }
-  #inspector header { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
-  #inspector header h1 { margin: 0; font-size: 15px; letter-spacing: .3px; }
-  #inspector header p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+  #inspector header { padding: 16px 18px 12px; border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #1a1e29, var(--panel)); }
+  #inspector header h1 { margin: 0; font-size: 15px; letter-spacing: .3px; display: flex;
+    align-items: center; gap: 8px; }
+  #inspector header p { margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
   .badge { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 999px;
     border: 1px solid var(--line); color: var(--muted); vertical-align: middle; }
-  .who { padding: 12px 18px; border-bottom: 1px solid var(--line); font-size: 13px; }
-  .who .name { font-weight: 600; }
+  .badge.live { color: var(--teal); border-color: #1f6b60; }
+  .who { padding: 12px 18px; border-bottom: 1px solid var(--line); font-size: 13px;
+    background: var(--panel-2); }
+  .who .name { font-weight: 700; }
   .who .role { color: var(--muted); text-transform: capitalize; }
   #insp-body { overflow-y: auto; padding: 14px 18px 24px; flex: 1; }
   .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
-    color: var(--muted); margin: 18px 0 8px; }
+    color: var(--muted); margin: 18px 0 8px; display: flex; align-items: center; gap: 8px; }
   .section-title:first-child { margin-top: 0; }
   .mem { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
     background: #12151d; font-size: 13px; line-height: 1.4; animation: cardIn .35s ease both; }
   @keyframes cardIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   .mem .meta { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
   .mem .kind { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
-  .mem .sim { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--accent); }
+  .mem .sim { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--accent-soft); }
   .mem.shared .sim { color: var(--aws); }
   .mem .bar { height: 3px; background: #262b38; border-radius: 2px; margin-top: 7px; overflow: hidden; }
   .mem .bar-fill { height: 100%; background: var(--accent); border-radius: 2px; }
@@ -54,7 +88,8 @@
     background: #0c0e14; border: 1px solid var(--line); border-radius: 8px; padding: 12px;
     color: #c6ccdb; max-height: 260px; overflow-y: auto; margin: 0; }
 
-  #composer { border-top: 1px solid var(--line); padding: 12px 18px; display: none; gap: 8px; }
+  #composer { border-top: 1px solid var(--line); padding: 12px 18px; display: none; gap: 8px;
+    background: var(--panel-2); }
   #composer.on { display: flex; }
   #composer input { flex: 1; background: #0c0e14; border: 1px solid var(--line); color: var(--ink);
     border-radius: 8px; padding: 10px 12px; font-size: 14px; outline: none; }
@@ -63,39 +98,54 @@
     padding: 0 16px; font-weight: 600; cursor: pointer; }
   #composer button:disabled { opacity: .5; cursor: default; }
 
-  #toolbar { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 10;
-    display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-  #toolbar button { background: #1a2440; color: #9db4ff; border: 1px solid #2a3a66;
-    border-radius: 999px; padding: 7px 13px; font-size: 12px; font-weight: 600; cursor: pointer; }
-  #toolbar button:hover { background: #22305a; }
-  #toolbar button:disabled { opacity: .5; cursor: default; }
-  #reset-db { background: #2a1420 !important; color: #ff8fa3 !important; border-color: #4a2230 !important; }
-  #reset-db:hover { background: #3a1a29 !important; }
+  /* scenario explainer modal */
+  #modal { position: fixed; inset: 0; z-index: 50; display: none; align-items: center;
+    justify-content: center; background: rgba(6,8,12,.72); backdrop-filter: blur(3px); }
+  #modal.on { display: flex; }
+  #modal-card { width: min(560px, 92vw); max-height: 86vh; overflow-y: auto;
+    background: linear-gradient(180deg, #1a1e29, #12151d); border: 1px solid #2c3752;
+    border-radius: 14px; padding: 22px 24px; box-shadow: 0 30px 90px rgba(0,0,0,.6);
+    animation: cardIn .3s ease both; }
+  #modal-tag { font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--accent-soft); font-weight: 700; }
+  #modal-title { margin: 6px 0 14px; font-size: 22px; }
+  #modal-card .block { margin-bottom: 14px; }
+  #modal-card .block h3 { margin: 0 0 5px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .7px; color: var(--muted); }
+  #modal-card .block p { margin: 0; font-size: 13.5px; line-height: 1.55; color: #dfe3ec; }
+  #modal-card .block.crdb { border-left: 3px solid var(--teal); padding-left: 12px; }
+  #modal-card .block.crdb h3 { color: var(--teal); }
+  #modal-card .block.watch { border-left: 3px solid var(--accent); padding-left: 12px; }
+  #modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  #modal-run { flex: 1; background: var(--accent); color: #fff; border: 0; border-radius: 9px;
+    padding: 12px; font-weight: 700; font-size: 14px; cursor: pointer; }
+  #modal-run:hover { background: #7a45ff; }
+  #modal-cancel { background: transparent; color: var(--muted); border: 1px solid var(--line);
+    border-radius: 9px; padding: 12px 18px; font-weight: 600; cursor: pointer; }
+  #modal-cancel:hover { color: var(--ink); }
 </style>
 
 <div id="app">
   <div id="stage">
     <div id="game-container"></div>
-    <div id="hint"><b>Arrows / WASD</b> to walk &nbsp;·&nbsp; <b>E</b> to talk when close &nbsp;·&nbsp; <b>Esc</b> to leave</div>
     <div id="toolbar">
-      <button id="scenario-fraud" title="Rich-customer impersonation pressuring Daniel Okafor past verification.">Fraud &amp; Security ▶</button>
-      <button id="scenario-lending" title="Loan application to Priya Shah with a self-contradicting income figure.">Credit &amp; Lending ▶</button>
-      <button id="scenario-cx" title="Routine account questions to Marge, then a probe for what Omar was told.">Customer Experience ▶</button>
-      <button id="scenario-ops" title="Large cash deposit to Ruth Alvarez, edging toward a structuring pattern.">Operations &amp; Treasury ▶</button>
-      <button id="reset-db" title="Wipe all memory and events. Branches/NPCs/players stay.">Clear DB</button>
+      <div id="brand"><span class="dot"></span>Meridian Street Branch</div>
+      <div id="scenario-bar"></div>
+      <button id="reset-db" title="Wipe all memory and events. Branch, staff and customers stay.">Clear DB</button>
     </div>
+    <div id="hint"><b>Arrows / WASD</b> to walk &nbsp;·&nbsp; <b>E</b> to talk when close &nbsp;·&nbsp; <b>Esc</b> to leave &nbsp;·&nbsp; or run a <b>scenario</b> above</div>
   </div>
 
   <aside id="inspector">
     <header>
-      <h1>Memory Inspector <span class="badge">live</span></h1>
+      <h1>Memory Inspector <span class="badge live">live</span></h1>
       <p>Exactly what the character could recall this turn — enforced in the CockroachDB query, not the prompt.</p>
     </header>
     <div class="who" id="who">
       <span class="name">Nobody nearby</span> — <span class="role">walk up to a character</span>
     </div>
     <div id="insp-body">
-      <div class="section-title">Private memories <span class="badge">npc + player scoped</span></div>
+      <div class="section-title">Private memories <span class="badge">npc + player + session scoped</span></div>
       <div id="private"><div class="empty">No turn yet.</div></div>
       <div class="section-title">Shared branch events <span class="badge">role scoped</span></div>
       <div id="shared"><div class="empty">No turn yet.</div></div>
@@ -107,4 +157,19 @@
       <button id="send">Send</button>
     </div>
   </aside>
+</div>
+
+<div id="modal">
+  <div id="modal-card">
+    <div id="modal-tag"></div>
+    <div id="modal-title"></div>
+    <div class="block"><h3>The situation</h3><p id="modal-situation"></p></div>
+    <div class="block"><h3>What it proves</h3><p id="modal-proves"></p></div>
+    <div class="block crdb"><h3>CockroachDB showcased</h3><p id="modal-crdb"></p></div>
+    <div class="block watch"><h3>Watch the inspector</h3><p id="modal-watch"></p></div>
+    <div id="modal-actions">
+      <button id="modal-run">Run scenario ▶</button>
+      <button id="modal-cancel">Cancel</button>
+    </div>
+  </div>
 </div>

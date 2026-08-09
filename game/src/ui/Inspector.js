@@ -1,7 +1,10 @@
 // Renders the DialogueResponse into the side panel: which private memories and which
 // shared events the character actually recalled, and the prompt they produced. The split
 // is by source_type, the same distinction the backend enforces during retrieval.
+import { ROLE_LABEL } from "../config";
+
 const el = (id) => document.getElementById(id);
+const prettyRole = (role) => ROLE_LABEL[role] || role;
 
 function memCard(hit, shared) {
   const kind = shared ? "shared event" : "private memory";
@@ -36,7 +39,7 @@ export function setNearby(name, role) {
     who.innerHTML = `<span class="name">Nobody nearby</span> — <span class="role">walk up to a character</span>`;
     return;
   }
-  who.innerHTML = `<span class="name">${name}</span> — <span class="role">${role}</span>`;
+  who.innerHTML = `<span class="name">${name}</span> — <span class="role">${prettyRole(role)}</span>`;
 }
 
 export function showTurn(resp) {

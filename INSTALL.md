@@ -56,7 +56,8 @@ Or via Docker:
 docker compose up --build backend
 ```
 
-Verify it's up: `curl http://localhost:8000/npcs` should return the 5 seeded characters.
+Verify it's up: `curl http://localhost:8000/npcs` should return the 7 seeded characters
+(two tellers, a manager, a loan officer, a compliance officer, a wealth advisor, and a guard).
 
 ## 5. Run the game
 
@@ -68,7 +69,13 @@ npm run dev
 
 Opens at `http://localhost:3001`, talking to the backend
 at `http://localhost:8000`. Walk with arrows/WASD, press **E** near a character to talk,
-**Esc** to leave a conversation.
+**Esc** to leave a conversation. The buttons along the top run scripted scenarios — each
+opens an explainer of what it demonstrates before it plays. **Clear DB** wipes all memory
+and events but keeps the branch, staff, and customers.
+
+Each browser session is its own isolated collection: memory is tagged with a per-load
+session id, so a reload or a second tab starts every character's memory from empty, and
+closing the tab tears that session's rows down.
 
 ## 6. Verify end-to-end
 

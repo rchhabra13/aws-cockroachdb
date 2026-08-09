@@ -27,19 +27,25 @@ receive the authorization but not the manager's private transcript.
 | Ruth Alvarez | Security guard | Her private conversations with the player; guard-visible events |
 
 All four are created by `schema/seed.sql` with stable identifiers, so the scenario
-survives a database reset.
+survives a database reset. The seed also adds a second teller (Omar Reed), a loan officer
+(Priya Shah), a compliance officer (Grace Okonkwo), and a wealth advisor (Victor Cross) —
+seven characters in all — so the game client can demonstrate isolation between two NPCs of
+the same role and route compliance events to the desks entitled to them.
 
 ## Memory model
 
 ### Private character memory
 
-Each player and NPC message is embedded and stored in `memory_embeddings` with both an
-`npc_id` and a `player_id`. Private recall requires both identifiers to match. Relevant
-memories are ranked with vector similarity, filtered with the current similarity floor,
-and limited to eight results.
+Each player and NPC message is embedded and stored in `memory_embeddings` with an
+`npc_id`, a `player_id`, and a `session_id`. Private recall requires the npc and player
+identifiers to match, and — when the caller is session-bound, as the game client always is
+— the session id as well. Relevant memories are ranked with vector similarity, filtered
+with the current similarity floor, and limited to eight results.
 
 A recall request for Marge therefore has no database path to a row owned by Daniel or
-Ruth. The restriction is applied before prompt construction.
+Ruth, nor to a row from a different play session. Each session is its own collection: a new
+tab or reload starts every character's memory from empty, and closing the tab tears that
+session's rows down. The restriction is applied before prompt construction.
 
 ### Role-scoped branch events
 
@@ -195,8 +201,8 @@ MCP Server instead.
 | Shared memory | Server-owned role mapping, shared-event recall, publish and withdraw routes | Automatic publication, event lifecycle, branch constraint in recall |
 | World state | Tables for incidents, promises, checkpoints | Services that create, update, and consume those records |
 | Observability | Dialogue returns the exact prompt used; the UI renders it | Persisted per-turn traces; MCP auditor |
-| User interface | Next.js app: character switcher, chat, memory inspector, event controls | Deployment configuration |
-| Deployment | Backend and frontend Dockerfiles; Compose for local use | AWS deployment |
+| User interface | Phaser game client: walk-and-talk bank branch, chat, memory inspector | Deployment configuration |
+| Deployment | Backend Dockerfile; Compose for local use | AWS deployment, game client hosting |
 
 ## Known limitations
 
