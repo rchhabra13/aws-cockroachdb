@@ -1,13 +1,6 @@
 """Embedding provider selection.
 
-EMBEDDING_PROVIDER chooses between Bedrock's Titan Text Embeddings V2 and a local
-sentence-transformers model. Unlike the dialogue provider there is no fallback between
-them: the two produce vectors of different widths, and a memory stored under one model
-cannot be compared against a query embedded with the other. Silently switching would
-return nonsense rather than an error.
-
-Because of that, embedding_dim() must match the VECTOR width in schema/init.sql. Changing
-provider means migrating the column and re-embedding every stored memory.
+Provider changes require a matching schema width and re-embedded stored memories.
 """
 
 from functools import lru_cache
@@ -20,9 +13,7 @@ LOCAL_DIM = 384
 
 @lru_cache
 def _local_model():
-    # Not installed in the container image: it pulls torch and the model weights, which
-    # cost over a gigabyte for a path the deployed service does not use. Install
-    # sentence-transformers locally to run with EMBEDDING_PROVIDER=local.
+    # sentence-transformers is intentionally absent from the default dependencies.
     from sentence_transformers import SentenceTransformer
 
     return SentenceTransformer("all-MiniLM-L6-v2")

@@ -14,12 +14,7 @@ async def store_memory(
     player_id: UUID | None,
     session_id: UUID | None = None,
 ) -> None:
-    """Persist one memorable event as a vector-searchable row.
-
-    npc_id=None marks the memory as branch-shared (see shared_branch_events).
-    session_id tags the row to a play session; None leaves it session-agnostic (used by
-    fixtures and the verify suite, which read across sessions).
-    """
+    """Store an embedded memory; a null npc_id marks branch-shared data."""
     embedding = to_vector_literal(await asyncio.to_thread(embed_text, content))
     pool = await get_pool()
     await pool.execute(

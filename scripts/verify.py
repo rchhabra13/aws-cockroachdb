@@ -1,24 +1,14 @@
-"""Verify OmniNPC's two memory isolation guarantees.
+"""Verify cross-character and cross-player memory isolation.
 
-Suite A, cross-character: one character cannot retrieve another's private memories, an
-announcement published to a role reaches that role, and withdrawing it takes it away
-again.
-
-Suite B, cross-player: one character talking to ten different people keeps ten separate
-memory streams, including for two pairs of customers who said nearly the same thing.
-
-Every assertion is made against what the database returned, never against what a model
-said. A model that declines to repeat something was still given it; only the retrieval set
-shows what it actually had.
+Assertions inspect retrieval results rather than generated dialogue. The script clears
+interaction data for the seeded demo players before running.
 
 Usage:
     docker compose up -d backend
     ./scripts/bootstrap.sh              # or apply schema/seed.sql
     backend/.venv/bin/python scripts/verify.py
 
-Exits 0 when every check passes, 1 otherwise. Destructive for the seeded demo players
-only: their memories, messages, conversations, and published events are cleared first so
-runs are repeatable.
+Exits 0 when every check passes and 1 otherwise.
 """
 
 import asyncio
@@ -38,6 +28,7 @@ import httpx  # noqa: E402
 from app.db import close_pool, get_pool  # noqa: E402
 from app.memory.publish import publish_shared_event  # noqa: E402
 from app.memory.retrieval import recall  # noqa: E402
+from app.policies import STRUCTURING_SUMMARY  # noqa: E402
 
 API = "http://localhost:8000"
 
@@ -45,6 +36,7 @@ BRANCH = uuid.UUID("0a5e0000-0000-4000-8000-000000000001")
 MARGE = uuid.UUID("0a5e0000-0000-4000-8000-00000000000a")
 DANIEL = uuid.UUID("0a5e0000-0000-4000-8000-00000000000b")
 RUTH = uuid.UUID("0a5e0000-0000-4000-8000-00000000000c")
+GRACE = uuid.UUID("0a5e0000-0000-4000-8000-00000000000f")
 PLAYER = uuid.UUID("0a5e0000-0000-4000-8000-0000000000ff")
 
 
@@ -52,7 +44,7 @@ def _p(suffix: str) -> uuid.UUID:
     return uuid.UUID(f"0a5e0000-0000-4000-8000-0000000001{suffix}")
 
 
-# errand, the query used to look the memory back up, and a detail unique to this customer
+# Each row includes an errand, recall query, and customer-specific detail.
 CUSTOMERS = [
     (_p("01"), "Alice Reyes", "I need a mortgage pre-approval for a house at 410000 dollars.", "mortgage pre-approval", "410000"),
     (_p("02"), "Ben Osei", "I am disputing a card charge of 89 dollars at a hardware store.", "disputing a card charge", "89"),
@@ -66,8 +58,8 @@ CUSTOMERS = [
     (_p("0a"), "Jamal Farouk", "I need a power of attorney document notarized.", "notarizing a document", "power of attorney"),
 ]
 
-# pairs whose errands are near identical, so similarity cannot separate them
-COLLISIONS = [(2, 6), (0, 8)]  # Carla/Grace, Alice/Ingrid
+# Similar errands make player scoping, rather than text similarity, decisive.
+COLLISIONS = [(2, 6), (0, 8)]  # Carla/Grace and Alice/Ingrid
 
 failures: list[str] = []
 
@@ -140,13 +132,7 @@ async def reset(players: list[uuid.UUID]) -> None:
 
 
 async def probe(npc: uuid.UUID, player: uuid.UUID, session: uuid.UUID, message: str) -> str:
-    """Ask without leaving a memory, so an ablation compares like with like.
-
-    A normal turn writes the exchange back. That ruins the A/B: the first probe's reply
-    becomes a memory, the guard recalls having already granted access, and keeps granting
-    it after the announcement is withdrawn. Rolling the probe back leaves the announcement
-    as the only difference between the two runs.
-    """
+    """Remove probe writes so the authorization remains the only A/B difference."""
     pool = await get_pool()
     before = {
         r["id"]
@@ -206,8 +192,7 @@ async def suite_a() -> None:
     )
     print(f"  published authorization {event_id} to roles: guard, manager\n")
 
-    # A1: the teller is isolated. Two positive controls first, because "recalled nothing"
-    # would satisfy the negative assertions just as well as correct scoping does.
+    # Positive controls distinguish isolation from a broken retrieval path.
     asked_about_manager = await recall(MARGE, PLAYER, "did the manager say anything about me?")
     asked_about_own = await recall(MARGE, PLAYER, "can you help me with my balance?")
     daniel_hits = await recall(DANIEL, PLAYER, "what did I tell you about the security test?")
@@ -223,7 +208,7 @@ async def suite_a() -> None:
     check(not shared_seen, "A1: teller cannot reach a guard/manager announcement",
           f"({len(shared_seen)} seen)" if shared_seen else "")
 
-    # A2: the guard receives the decision, not the conversation behind it.
+    # The guard receives the decision, not the private conversation behind it.
     ruth_hits = await recall(RUTH, PLAYER, "I need to check the vault")
     got = event_id in {h.source_id for h in ruth_hits}
     ruth_leaked = {h.source_id for h in ruth_hits} & daniel_own
@@ -233,7 +218,7 @@ async def suite_a() -> None:
     for h in ruth_hits:
         print(f"        Ruth recalled [{h.source_type}] {h.similarity:.3f} {h.content[:56]}")
 
-    # A3: ablation. Same question twice, the announcement removed in between.
+    # Ask the same question before and after removing the authorization.
     with_auth = await probe(RUTH, PLAYER, session, "I need to get into the vault.")
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -264,7 +249,7 @@ async def suite_b() -> None:
 
     owned = {pid: await own_memory_ids(MARGE, pid) for pid, *_ in CUSTOMERS}
 
-    # B1 and B2: every customer reaches their own memories and nobody else's.
+    # Every customer should reach their own memories and nobody else's.
     reached_own = 0
     cross = 0
     for pid, name, _, query, _ in CUSTOMERS:
@@ -280,9 +265,7 @@ async def suite_b() -> None:
     check(cross == 0, "B2: no customer reaches another's memories",
           f"({cross} cross-player hits across {len(CUSTOMERS)**2} cells)")
 
-    # B3: the collisions are real. Score the other customer's row with the scope removed;
-    # if it clears the floor, similarity alone would have returned the wrong person, and
-    # only the player filter prevented it.
+    # Score confusable rows without player scope to confirm the isolation predicate matters.
     from app.embeddings import embed_text
     from app.memory.retrieval import PRIVATE_SIMILARITY_FLOOR
     from app.memory.vector import to_vector_literal
@@ -314,6 +297,31 @@ async def suite_b() -> None:
           f"({confusable}/{len(COLLISIONS)}) — otherwise B2 proves nothing about confusable data")
 
 
+async def suite_c() -> None:
+    """Automatic teller observation becomes a compliance-visible event."""
+    print("\n" + "=" * 78)
+    print("SUITE C  automatic cross-agent event")
+    session = uuid.uuid4()
+
+    await say(MARGE, PLAYER, session, "I would like to deposit $9,500 in cash.")
+    await say(MARGE, PLAYER, session, "Make it $9,000 at the other window tomorrow.")
+    await say(MARGE, PLAYER, session, "I do not want any reporting paperwork.")
+
+    grace_hits = await recall(GRACE, PLAYER, "Was anything flagged?", session)
+    marge_hits = await recall(MARGE, PLAYER, "Was anything flagged?", session)
+    grace_events = [
+        hit for hit in grace_hits
+        if hit.source_type == "shared_event" and hit.content == STRUCTURING_SUMMARY
+    ]
+    marge_events = [
+        hit for hit in marge_hits
+        if hit.source_type == "shared_event" and hit.content == STRUCTURING_SUMMARY
+    ]
+
+    check(len(grace_events) == 1, "C1: compliance receives one automatic structuring event")
+    check(not marge_events, "C2: the teller does not receive the compliance event")
+
+
 async def main() -> int:
     players = [PLAYER] + [c[0] for c in CUSTOMERS]
     print("=" * 78)
@@ -322,6 +330,7 @@ async def main() -> int:
 
     await suite_a()
     await suite_b()
+    await suite_c()
 
     print("\n" + "=" * 78)
     if failures:
@@ -329,7 +338,7 @@ async def main() -> int:
         for f in failures:
             print(f"  {f}")
     else:
-        print("PASSED  memory is isolated across characters and across players")
+        print("PASSED  memory isolation and automatic event checks")
     print("=" * 78)
 
     await close_pool()

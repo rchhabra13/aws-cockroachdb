@@ -1,9 +1,4 @@
-// In-canvas panel that shows the exchange: the player's line on top, then the character's
-// spoken reply below. Player input is typed in the DOM composer; this box is display-only.
-//
-// Replies can run several paragraphs (numbered lists, multi-step explanations); the box
-// itself stays a fixed height, so the reply text is clipped to a content area and scrolls
-// with the mouse wheel when it overflows, instead of spilling out past the box border.
+// Display-only dialogue panel with clipped, scrollable reply text.
 export default class DialogueBox {
   constructor(scene) {
     const w = scene.scale.width;
@@ -77,9 +72,7 @@ export default class DialogueBox {
     this.hint.setVisible(this._visible && maxScroll > 0);
   }
 
-  // Recomputes scroll bounds after the reply text changes. While the reply is still
-  // streaming in, autoscroll keeps the newest text visible unless the player has
-  // deliberately scrolled up to reread something earlier.
+  // Preserve manual scroll position while streaming unless the view is pinned to the end.
   refreshScroll() {
     const maxScroll = Math.max(0, this.text.height - this.contentH);
     this.scrollOffset = this.pinnedToBottom ? maxScroll : Math.min(this.scrollOffset, maxScroll);

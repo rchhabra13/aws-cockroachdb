@@ -1,6 +1,4 @@
--- Demo data for the mini scenario (docs/MINI_SCENARIO.md).
--- Idempotent, and identifiers are fixed literals so scripts and tests stay valid
--- across database resets.
+-- Demo data for docs/SCENARIO.md. Fixed identifiers keep scripts valid after resets.
 
 INSERT INTO branches (id, name)
 SELECT '0a5e0000-0000-4000-8000-000000000001', 'Meridian Street Branch'
@@ -10,9 +8,7 @@ INSERT INTO players (id, name)
 SELECT '0a5e0000-0000-4000-8000-0000000000ff', 'Player One'
 WHERE NOT EXISTS (SELECT 1 FROM players WHERE id = '0a5e0000-0000-4000-8000-0000000000ff');
 
--- permissions.can_publish is reserved for the future publication-permission gate. The
--- current mini scenario publishes its authorization explicitly. Everything in
--- personality affects characterization only.
+-- permissions.can_publish is reserved; current publication uses an operator route.
 
 INSERT INTO npcs (id, branch_id, name, role, personality, permissions)
 SELECT '0a5e0000-0000-4000-8000-00000000000a',
@@ -35,10 +31,7 @@ SELECT '0a5e0000-0000-4000-8000-00000000000b',
        '{"clearance":"manager","can_publish":["authorization","incident"]}'
 WHERE NOT EXISTS (SELECT 1 FROM npcs WHERE id = '0a5e0000-0000-4000-8000-00000000000b');
 
--- Ten customers for the cross-player isolation check in scripts/verify.py. Two pairs
--- deliberately share an errand -- Carla and Grace both open a savings account for a
--- daughter, Alice and Ingrid both come about a mortgage -- so that semantic similarity
--- alone cannot tell them apart and only the player scope can.
+-- Ten customers for cross-player checks, including two pairs with similar errands.
 INSERT INTO players (id, name)
 SELECT id, name FROM (VALUES
     ('0a5e0000-0000-4000-8000-000000000101'::UUID, 'Alice Reyes'),
@@ -65,9 +58,7 @@ SELECT '0a5e0000-0000-4000-8000-00000000000c',
        '{"clearance":"security","can_publish":["incident"]}'
 WHERE NOT EXISTS (SELECT 1 FROM npcs WHERE id = '0a5e0000-0000-4000-8000-00000000000c');
 
--- A second teller. Same role as Marge, so they share the teller branch bulletins, but a
--- private word to one is invisible to the other: private recall matches npc_id, and their
--- ids differ. This is the sharpest isolation demo -- same role, same player, no leak.
+-- A second teller supports same-role NPC isolation checks.
 INSERT INTO npcs (id, branch_id, name, role, personality, permissions)
 SELECT '0a5e0000-0000-4000-8000-00000000000d',
        '0a5e0000-0000-4000-8000-000000000001',
@@ -79,9 +70,7 @@ SELECT '0a5e0000-0000-4000-8000-00000000000d',
        '{"clearance":"none","can_publish":[]}'
 WHERE NOT EXISTS (SELECT 1 FROM npcs WHERE id = '0a5e0000-0000-4000-8000-00000000000d');
 
--- A loan officer: a fourth role in the lattice. Fraud alerts (suspicion events) reach the
--- loan desk too, but an authorization for the vault does not, because roles.py does not put
--- loan_officer in that event's audience.
+-- The loan officer receives suspicion events but not vault authorizations.
 INSERT INTO npcs (id, branch_id, name, role, personality, permissions)
 SELECT '0a5e0000-0000-4000-8000-00000000000e',
        '0a5e0000-0000-4000-8000-000000000001',
@@ -93,9 +82,7 @@ SELECT '0a5e0000-0000-4000-8000-00000000000e',
        '{"clearance":"none","can_publish":[]}'
 WHERE NOT EXISTS (SELECT 1 FROM npcs WHERE id = '0a5e0000-0000-4000-8000-00000000000e');
 
--- A compliance officer: a fifth role. Structuring and suspicion alerts reach her desk, but
--- everyday teller chatter and vault authorizations do not — her audience is set in roles.py.
--- She is who a smurfing pattern is meant to surface to.
+-- Compliance receives structuring and suspicion events.
 INSERT INTO npcs (id, branch_id, name, role, personality, permissions)
 SELECT '0a5e0000-0000-4000-8000-00000000000f',
        '0a5e0000-0000-4000-8000-000000000001',
@@ -107,9 +94,7 @@ SELECT '0a5e0000-0000-4000-8000-00000000000f',
        '{"clearance":"compliance","can_publish":["suspicion","incident"]}'
 WHERE NOT EXISTS (SELECT 1 FROM npcs WHERE id = '0a5e0000-0000-4000-8000-00000000000f');
 
--- A wealth advisor: a sixth role, outside the security lattice entirely. Receives no branch
--- events; his value is private recall of a client's stated situation and risk tolerance, so
--- a later contradiction is caught against what the client said earlier in the same session.
+-- The advisor has private recall and no configured branch-event audience.
 INSERT INTO npcs (id, branch_id, name, role, personality, permissions)
 SELECT '0a5e0000-0000-4000-8000-000000000010',
        '0a5e0000-0000-4000-8000-000000000001',

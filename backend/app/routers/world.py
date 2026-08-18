@@ -1,16 +1,11 @@
-"""World actions: things the player does, rather than says.
-
-Also exposes the authorization lifecycle the demo needs, plus session teardown and a reset.
-Withdrawal deletes the event and its memory row, because shared_branch_events has no
-revoked_at column yet. That is fine for a demo control but is not how a real system should
-retire an event, since it destroys the audit trail an event log would otherwise keep.
-"""
+"""Authorization, reset, and session lifecycle routes."""
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
+from app.config import get_settings
 from app.db import get_pool
 from app.memory.publish import publish_shared_event
 
@@ -18,16 +13,17 @@ router = APIRouter(prefix="/world", tags=["world"])
 
 AUTHORIZATION_SUMMARY = "The branch manager authorized a security test by this player."
 
-# Interaction/memory tables cleared by /world/reset, in child-before-parent order (DELETE
-# has no CASCADE keyword, unlike TRUNCATE). branches, npcs, players are fixtures and stay,
-# so the demo world remains playable immediately after a reset.
-#
-# Deliberately DELETE FROM rather than TRUNCATE: CockroachDB implements TRUNCATE as a
-# schema change (drop + recreate the table), which spawns a background "SCHEMA CHANGE GC"
-# job per table. Clicking the reset button a few times in a row during testing queued up
-# enough of these that a later TRUNCATE failed with "cannot perform TRUNCATE on ... which
-# has indexes being dropped" — a live schema change colliding with a new one. DELETE FROM
-# is a plain MVCC write, no schema change, no job, safe to call repeatedly.
+
+async def require_admin_key(x_admin_key: str | None = Header(default=None)) -> None:
+    """Require the configured shared secret; an empty setting disables the check."""
+    expected = get_settings().admin_api_key
+    if not expected:
+        return
+    if x_admin_key != expected:
+        raise HTTPException(status_code=401, detail="missing or invalid admin key")
+
+# Child-before-parent order avoids foreign-key failures. DELETE avoids the schema-change
+# jobs CockroachDB creates for TRUNCATE; fixture tables are intentionally retained.
 RESET_TABLES = [
     "messages",
     "memory_embeddings",
@@ -44,16 +40,15 @@ class AuthorizeRequest(BaseModel):
     branch_id: UUID
     player_id: UUID
     session_id: UUID | None = None
-    summary: str = AUTHORIZATION_SUMMARY
 
 
-@router.post("/authorize")
+@router.post("/authorize", dependencies=[Depends(require_admin_key)])
 async def authorize(req: AuthorizeRequest) -> dict:
-    """Publish a manager authorization, visible to guards and managers."""
+    """Publish the fixed manager authorization to guards and managers."""
     event_id = await publish_shared_event(
-        req.branch_id, req.player_id, "authorization", req.summary, req.session_id
+        req.branch_id, req.player_id, "authorization", AUTHORIZATION_SUMMARY, req.session_id
     )
-    return {"event_id": str(event_id), "summary": req.summary}
+    return {"event_id": str(event_id), "summary": AUTHORIZATION_SUMMARY}
 
 
 @router.get("/events/{player_id}")
@@ -82,9 +77,9 @@ async def list_events(player_id: UUID) -> list[dict]:
     ]
 
 
-@router.delete("/events/{event_id}")
+@router.delete("/events/{event_id}", dependencies=[Depends(require_admin_key)])
 async def withdraw_event(event_id: UUID) -> dict:
-    """Withdraw an event so its effect on behaviour can be demonstrated by its absence."""
+    """Delete an event and its searchable memory row."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -103,10 +98,9 @@ async def withdraw_event(event_id: UUID) -> dict:
     return {"withdrawn": str(event_id)}
 
 
-@router.delete("/reset")
+@router.delete("/reset", dependencies=[Depends(require_admin_key)])
 async def reset_world() -> dict:
-    """Wipe every character's memory and every branch event. Fixtures (branches, npcs,
-    players) are kept so the demo stays playable with a clean slate."""
+    """Delete interaction data while retaining branch, NPC, and player fixtures."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -116,9 +110,7 @@ async def reset_world() -> dict:
 
 
 async def _delete_session(conn, session_id: UUID) -> int:
-    """Delete every row belonging to one play session, child-before-parent. Returns the
-    number of memory rows removed. shared_branch_events carries no session_id column, so its
-    rows are found through the session-tagged shared_event memories that point at them."""
+    """Delete one session; find shared events through their session-tagged memories."""
     event_ids = [
         r["id"]
         for r in await conn.fetch(
@@ -148,9 +140,7 @@ async def _delete_session(conn, session_id: UUID) -> int:
 
 @router.delete("/session/{session_id}")
 async def end_session(session_id: UUID) -> dict:
-    """Tear down one play session — called when a player leaves or closes the tab, so an
-    abandoned session's memories do not linger. Each session is its own collection; this
-    drops it whole."""
+    """Delete one play session and return the number of removed memories."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -158,11 +148,9 @@ async def end_session(session_id: UUID) -> dict:
     return {"ended": str(session_id), "memories_removed": removed}
 
 
-@router.post("/session/sweep")
+@router.post("/session/sweep", dependencies=[Depends(require_admin_key)])
 async def sweep_sessions() -> dict:
-    """Reap conversations that never produced a message — sessions a player opened but never
-    spoke in. Truly empty sessions leave no memory rows, only these orphan conversation
-    rows; this clears them so the table does not accrete dead sessions over a long demo."""
+    """Delete conversation rows that never received a message."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():

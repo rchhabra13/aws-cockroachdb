@@ -1,6 +1,3 @@
-// Renders the DialogueResponse into the side panel: which private memories and which
-// shared events the character actually recalled, and the prompt they produced. The split
-// is by source_type, the same distinction the backend enforces during retrieval.
 import { ROLE_LABEL } from "../config";
 
 const el = (id) => document.getElementById(id);
@@ -46,7 +43,7 @@ export function showTurn(resp) {
   const mems = resp.recalled_memories || [];
   const shared = mems.filter((m) => m.source_type === "shared_event");
   const priv = mems.filter((m) => m.source_type !== "shared_event");
-  fill(el("private"), priv, false, "Nothing private matched — nothing to leak.");
+  fill(el("private"), priv, false, "No private memory matched.");
   fill(el("shared"), shared, true, "No branch event in this character's role scope.");
   el("prompt").textContent = resp.prompt_sent || "—";
 }

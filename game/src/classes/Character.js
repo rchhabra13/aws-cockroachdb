@@ -1,7 +1,3 @@
-// A bank staff member. Unlike the philoagents reference this uses no sprite atlas — the
-// texture is generated in Boot.js from the role colour — and the characters hold their
-// posts rather than roam, because a teller behind a counter wandering the lobby reads
-// as a bug, not life. They turn to face the player when approached.
 export default class Character {
   constructor(scene, { id, name, role, x, y, textureKey }) {
     this.scene = scene;
@@ -37,7 +33,6 @@ export default class Character {
   }
 
   facePlayer(player) {
-    // Flip horizontally toward the player; the generated texture faces front.
     this.sprite.setFlipX(player.x < this.sprite.x);
   }
 }

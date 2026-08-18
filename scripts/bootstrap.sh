@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
 #
-# Provision the OmniNPC database on a CockroachDB Cloud cluster.
-#
-# The cluster's host, port, and TLS parameters are read from the ccloud CLI rather than
-# hardcoded, so this works against any cluster in the organization without editing the
-# script. Only the SQL password comes from the environment; ccloud never returns it.
+# Provision and seed a CockroachDB Cloud database using ccloud connection details.
 #
 #   ccloud auth login
 #   export CRDB_SQL_PASSWORD='...'
 #   ./scripts/bootstrap.sh
 #
-# Idempotent: the database is only created when absent, and both SQL files use
-# IF NOT EXISTS / guarded inserts.
+# Database creation, schema creation, and seed inserts are guarded for repeated runs.
 
 set -euo pipefail
 

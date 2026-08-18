@@ -9,3 +9,6 @@ node_modules/
 k8s/secrets.yaml
 
 dist/
+
+# Local planning notes
+to_do.md

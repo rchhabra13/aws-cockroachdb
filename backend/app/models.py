@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MemoryHit(BaseModel):
@@ -17,10 +17,13 @@ class DialogueRequest(BaseModel):
     message: str
 
 
+class PlayerRegistration(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
 class DialogueResponse(BaseModel):
     npc_id: UUID
     reply: str
     recalled_memories: list[MemoryHit]
-    # The exact prompt this turn was generated from, so the memory inspector renders what
-    # the character was actually given rather than a reconstruction of it.
+    # Returned for the client-side memory inspector.
     prompt_sent: str = ""

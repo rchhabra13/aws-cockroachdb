@@ -1,117 +1,137 @@
 # OmniNPC
 
-**Rishi Chhabra · Aryan Kandari**
+OmniNPC is a bank-branch game where AI characters recall private conversations and role-scoped events from CockroachDB.
 
-Role-aware semantic memory for AI characters, built on CockroachDB and Amazon Bedrock.
+## Features
 
-![CockroachDB](https://img.shields.io/badge/CockroachDB-Vector%20Search-6933FF)
-![Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Nova%20%2B%20Titan-FF9900)
-![FastAPI](https://img.shields.io/badge/FastAPI-async-009688)
-![License](https://img.shields.io/badge/License-MIT-green)
+- Semantic recall scoped by NPC, player, and browser session
+- Shared branch events restricted by server-defined role audiences
+- Browser-specific player identity stored across visits
+- Optional session retention across reloads and browser restarts
+- Automatic teller-to-compliance structuring events based on conversation history
+- Six-message conversation history for short-term context
+- Amazon Bedrock dialogue and embeddings, with an optional Gemini dialogue fallback
+- Phaser game with seven seeded characters and six scripted scenarios
+- Memory inspector showing recalled records and the generated system prompt
+- HTTP and WebSocket dialogue routes
+- Verification script for cross-character and cross-player memory isolation
 
-An agent that remembers everything it was ever told is not a memory system. It is a leak
-waiting for the right question.
+## Tech Stack
 
-OmniNPC gives each character its own memory and enforces who may recall what **in the
-database query**, not in the prompt. A private conversation with the branch manager stays
-private. The decision that came out of it can be published to the roles that need it. The
-teller can retrieve neither.
+- **Client:** JavaScript, Phaser 3, Webpack 5
+- **API:** Python, FastAPI, Pydantic, asyncpg
+- **Database:** CockroachDB with `VECTOR(1024)` and a vector index
+- **Models:** Amazon Nova Pro, Amazon Titan Text Embeddings V2, optional Gemini fallback
+- **Local runtime:** Docker Compose or Python 3.12 from the backend Dockerfile
 
-## Why this is hard
+## Getting Started
 
-Most character systems either forget earlier interactions or pour all history into one
-shared context. A shared context makes it trivial for a character to reveal something it
-should never have received, and asking the model nicely not to mention it is not an access
-control boundary.
+Prerequisites:
 
-OmniNPC applies the visibility rule during retrieval:
+- A CockroachDB cluster
+- The CockroachDB Cloud CLI (`ccloud`) and PostgreSQL client (`psql`)
+- AWS credentials with access to the configured Bedrock dialogue and embedding models
+- Node.js and npm for the game client; no Node.js version is pinned in this repository
 
-- **Private memories** carry an NPC id, a player id, and a session id. Recall requires all
-  three to match, so there is no database path from one character to another's rows, and no
-  path from one play session into another's.
-- **Shared branch events** have no NPC owner. Their audience is derived from the event
-  type on the server, and matched against the requesting character's role.
-- **The prompt labels provenance**, separating what a character personally remembers from
-  official branch bulletins, so retrieved facts carry the right authority.
-- **Each session is its own collection.** Memory is tagged with a per-session id; a new tab
-  or reload begins from empty, and closing the tab tears that session's rows down. The same
-  isolation query that separates characters also separates sessions — one `WHERE` clause.
+Provision and seed the database:
 
-This design prevents another NPC's private rows from entering the recall context. It
-does not attempt to treat model instructions as an access-control boundary.
-
-## Scenario guides
-
-The game client ships six scripted scenarios along the top bar. Each opens an explainer —
-the situation, what it proves, and the CockroachDB capability it showcases — then walks the
-player over and plays out one turn per click so the memory inspector can be watched filling
-in. Four are everyday branch situations, two are deliberately strange stress tests:
-
-| Scenario | Character | Showcases |
-|---|---|---|
-| Persuasion Attack | Manager | Vector-indexed private recall — his own accumulating record of your attempts holds the line |
-| Smurfing the Deposit | Teller | Private rows vs. a role-scoped suspicion event — visibility is a `WHERE role IN (…)` predicate |
-| Inconsistent Applicant | Loan officer | Semantic recall catches a self-contradicting income figure across turns |
-| Privacy Probe | Manager → Teller | Cross-character isolation: the teller has no database path to the manager's private rows |
-| Phantom Promise | Teller | Per-session collections: a promise from another session isn't in this collection, so nothing is confirmed |
-| Reckless Windfall | Wealth advisor | Recall bridges a stated risk tolerance to a later reckless ask that shares no keywords |
-
-- [Comprehensive bank branch scenario](docs/SCENARIO.md) describes the intended
-  end-to-end experience and marks the implementation status of every stage.
-
-## Architecture
-
-```mermaid
-flowchart LR
-    UI[Phaser game client<br/>walk-and-talk branch + memory inspector] -->|POST /dialogue| API[FastAPI]
-
-    subgraph AWS[Amazon Bedrock]
-        TITAN[Titan Text Embeddings V2<br/>1024 dims]
-        NOVA[Amazon Nova Pro<br/>dialogue]
-    end
-
-    subgraph CRDB[CockroachDB]
-        VEC[(memory_embeddings<br/>VECTOR 1024 + vector index)]
-        REL[(npcs · players · conversations<br/>messages · shared_branch_events)]
-    end
-
-    API -->|embed message| TITAN
-    API -->|private recall<br/>npc_id AND player_id AND session_id| VEC
-    API -->|shared recall<br/>role in visible_to_roles| VEC
-    VEC --- REL
-    API -->|labelled prompt| NOVA
-    NOVA -->|reply| API
-    API -->|store both turns| TITAN
+```bash
+export CLUSTER='<cockroachdb-cluster-name>'
+export SQL_USER='<cockroachdb-sql-user>'
+export CRDB_SQL_PASSWORD='<cockroachdb-sql-password>'
+ccloud auth login
+./scripts/bootstrap.sh
 ```
 
-A dialogue request:
+Create the backend environment file and set the connection string printed by the bootstrap script:
 
-1. Embed the player's message with Titan.
-2. Retrieve private memories for this character, this player, and this session, above a
-   similarity floor.
-3. Retrieve shared events whose audience includes this character's role.
-4. Compose a prompt that labels the two kinds separately.
-5. Generate the reply with Nova.
-6. Store both sides of the exchange as private memories for that character.
+```bash
+cp backend/.env.example backend/.env
+```
 
-Structured records and 1024-dimensional memory vectors live in the same CockroachDB
-cluster, so a visibility rule is a `WHERE` clause rather than a sync job between a database
-and a separate vector store.
+Run the backend with Docker:
 
-## Hackathon tool mapping
+```bash
+docker compose up --build backend
+```
 
-Built for the [CockroachDB × AWS Hackathon — Build with Agentic Memory](https://cockroachdb-ai.devpost.com/).
+Or run it with a local Python environment:
 
-| Tool | Used for | Where |
-|---|---|---|
-| CockroachDB Distributed Vector Indexing | `VECTOR(1024)` column and vector index over all character memory; similarity recall, scoped by npc, player, and session in the same query | `schema/init.sql`, `backend/app/memory/retrieval.py` |
-| CockroachDB ccloud CLI | Provisioning the `omninpc` database and deriving the connection string, so no host is hardcoded | `scripts/bootstrap.sh` |
-| CockroachDB Cloud Managed MCP Server | Read-only auditing of stored memory and branch events. Configured; authentication not yet completed | `.mcp.json` |
-| Amazon Bedrock — Titan Text Embeddings V2 | Every memory vector, at 1024 dimensions | `backend/app/providers/bedrock.py`, `backend/app/embeddings.py` |
-| Amazon Bedrock — Amazon Nova Pro | Character dialogue, via the Converse API | `backend/app/providers/bedrock.py` |
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
 
-The cluster runs on AWS `us-east-1`, the same region as the Bedrock calls.
+In a second terminal, run the game:
+
+```bash
+cd game
+npm install
+npm run dev
+```
+
+Open `http://localhost:3001`. Use the arrow keys or WASD to move, press E near a character to talk, and press Esc to close a conversation. The client registers a browser-specific player ID on first load. Enable **Remember me** to reuse the current session identifier across reloads and browser restarts.
+
+With the backend running, execute the isolation checks from the repository root:
+
+```bash
+backend/.venv/bin/python scripts/verify.py
+```
+
+The verification script deletes interaction data for the seeded demo players before running. It checks cross-character isolation, cross-player isolation, and automatic teller-to-compliance event publication. See [INSTALL.md](INSTALL.md) for Bedrock access and TLS setup details.
+
+## Environment Variables
+
+Copy [`backend/.env.example`](backend/.env.example) to `backend/.env`.
+
+| Variable | Required | Default | Purpose |
+|---|---:|---|---|
+| `COCKROACHDB_URL` | No | `postgresql://root@localhost:26257/omninpc?sslmode=disable` | asyncpg connection string |
+| `LLM_PROVIDER` | No | `bedrock` | Dialogue provider: `bedrock` or `gemini` |
+| `LLM_FALLBACK_ENABLED` | No | `true` | Enables dialogue fallback after a provider error |
+| `LLM_FALLBACK_PROVIDER` | No | `gemini` | Fallback dialogue provider |
+| `GEMINI_API_KEY` | For Gemini | Empty | Gemini API key |
+| `GEMINI_MODEL_ID` | No | `gemini-2.5-flash` | Gemini dialogue model |
+| `EMBEDDING_PROVIDER` | No | `bedrock` | Embedding provider: `bedrock` or `local` |
+| `AWS_REGION` | No | `us-east-1` | Bedrock region |
+| `AWS_ACCESS_KEY_ID` | For explicit AWS credentials | Empty | AWS access key used by boto3 |
+| `AWS_SECRET_ACCESS_KEY` | For explicit AWS credentials | Empty | AWS secret key used by boto3 |
+| `BEDROCK_DIALOGUE_MODEL_ID` | No | `us.amazon.nova-pro-v1:0` | Bedrock dialogue model |
+| `BEDROCK_EMBEDDING_MODEL_ID` | No | `amazon.titan-embed-text-v2:0` | Bedrock embedding model |
+| `BEDROCK_EMBEDDING_DIMENSIONS` | No | `1024` | Titan embedding width; must match the schema |
+| `ADMIN_API_KEY` | No | Empty | Requires `X-Admin-Key` on operator routes when set |
+
+The local embedding provider uses `all-MiniLM-L6-v2` at 384 dimensions. Its dependency is not present in `backend/requirements.txt`, and the current schema is fixed at 1024 dimensions. It is not a drop-in replacement for the default Bedrock embedding provider.
+
+## Project Structure
+
+```text
+backend/              FastAPI application, providers, and memory queries
+backend/app/policies.py  Deterministic conversation-to-event policies
+backend/tests/        Policy unit tests
+game/                 Phaser client and Webpack configuration
+schema/               CockroachDB schema and seed data
+scripts/bootstrap.sh  Database provisioning and seeding
+scripts/verify.py     Live isolation checks
+docs/SCENARIO.md      Demo flow and implementation status
+CONTRIBUTING.md       Development checks and contribution guidelines
+iam/                  AWS IAM policy documents
+docker-compose.yml    Local backend container
+```
+
+## How it Works
+
+For each dialogue turn, the API embeds the player's message, retrieves private memories for the same NPC, player, and session, and retrieves shared events visible to the NPC's role. It adds the six most recent conversation messages, sends the resulting context to the configured dialogue provider, then stores both sides of the exchange as vector-searchable memories.
+
+Shared-event audiences come from `backend/app/roles.py`. Callers provide an event type, not an arbitrary list of roles.
+
+The structuring policy examines a teller's current-session player messages. When it finds repeated cash deposits below $10,000 together with reporting-avoidance language, it publishes one deduplicated `structuring` event for that player and session. Compliance officers, managers, and guards can retrieve the event; tellers cannot.
+
+The client stores a generated player ID in browser storage and registers it in CockroachDB. By default, each page load creates an ephemeral session and deletes its interaction data on teardown. **Remember me** stores the session identifier and skips teardown, allowing the same memories to be recalled on later visits.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE)

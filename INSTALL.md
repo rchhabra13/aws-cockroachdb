@@ -1,65 +1,70 @@
 # Installing OmniNPC
 
-Three pieces: a CockroachDB cluster, a FastAPI backend, and a Phaser game client.
+OmniNPC runs as a FastAPI backend, a Phaser client, and a CockroachDB database.
 
-## 1. Prerequisites
+## Prerequisites
 
-- Python 3.11+
-- Node 18+
-- A CockroachDB Cloud cluster (or any CockroachDB-compatible instance)
-- AWS account with Bedrock access (Nova Pro + Titan Embeddings V2, `us-east-1`)
-- Optional: a Gemini API key, used only as the dialogue fallback
+- A CockroachDB cluster
+- `ccloud` and `psql`
+- AWS credentials with access to Amazon Nova Pro and Titan Text Embeddings V2 in the configured region
+- Python for local backend development; the backend image uses Python 3.12
+- Node.js and npm; no Node.js version is pinned in the repository
 
-## 2. Provision the database
+The default configuration uses these Bedrock model IDs in `us-east-1`:
+
+- `us.amazon.nova-pro-v1:0`
+- `amazon.titan-embed-text-v2:0`
+
+Enable access to both models for the AWS account and region before starting the backend.
+
+## Database
+
+The bootstrap script reads the cluster connection details from `ccloud`, creates the database when needed, applies both SQL files, and verifies the vector index and seed rows.
 
 ```bash
-brew install cockroachdb/tap/ccloud libpq
+export CLUSTER='<cockroachdb-cluster-name>'
+export SQL_USER='<cockroachdb-sql-user>'
+export CRDB_SQL_PASSWORD='<cockroachdb-sql-password>'
 ccloud auth login
-export CRDB_SQL_PASSWORD='your-sql-password'
 ./scripts/bootstrap.sh
 ```
 
-This creates the `omninpc` database on the cluster, applies `schema/init.sql` and
-`schema/seed.sql`, and prints a `COCKROACHDB_URL` to use in the next step. It's
-idempotent — safe to re-run.
+`CLUSTER` and `SQL_USER` have project-specific defaults in `scripts/bootstrap.sh`. Set both explicitly when using another cluster or user.
 
-## 3. Configure the backend
+Copy the environment template and replace `COCKROACHDB_URL` with the connection string reported by the script, including the SQL password required by the application:
 
 ```bash
 cp backend/.env.example backend/.env
 ```
 
-Fill in `backend/.env`:
+## Backend
 
-| Variable | Value |
-|---|---|
-| `COCKROACHDB_URL` | printed by `bootstrap.sh` |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | credentials with Bedrock access |
-| `AWS_REGION` | `us-east-1` |
-| `GEMINI_API_KEY` | optional, only needed for fallback |
-
-`LLM_PROVIDER` defaults to `bedrock`, `LLM_FALLBACK_PROVIDER` to `gemini` — leave as is
-unless you want to flip primary/fallback.
-
-## 4. Run the backend
+Local Python environment:
 
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Or via Docker:
+Docker Compose:
 
 ```bash
 docker compose up --build backend
 ```
 
-Verify it's up: `curl http://localhost:8000/npcs` should return the 7 seeded characters
-(two tellers, a manager, a loan officer, a compliance officer, a wealth advisor, and a guard).
+The Compose configuration mounts `~/.postgresql/root.crt` into the container. For a CockroachDB Cloud URL using `sslmode=verify-full`, that host path must be the cluster CA certificate and must be a regular file.
 
-## 5. Run the game
+Check the API:
+
+```bash
+curl http://localhost:8000/healthz
+curl http://localhost:8000/npcs
+```
+
+## Game
 
 ```bash
 cd game
@@ -67,45 +72,28 @@ npm install
 npm run dev
 ```
 
-Opens at `http://localhost:3001`, talking to the backend
-at `http://localhost:8000`. Walk with arrows/WASD, press **E** near a character to talk,
-**Esc** to leave a conversation. The buttons along the top run scripted scenarios — each
-opens an explainer of what it demonstrates before it plays. **Clear DB** wipes all memory
-and events but keeps the branch, staff, and customers.
+Open `http://localhost:3001`. The development client calls `http://localhost:8000` and registers a browser-specific player ID on first load. The **Remember me** control also stores the current session identifier; leave it disabled for automatic interaction-data cleanup on page teardown.
 
-Each browser session is its own isolated collection: memory is tagged with a per-load
-session id, so a reload or a second tab starts every character's memory from empty, and
-closing the tab tears that session's rows down.
+## Verification
 
-## 6. Verify end-to-end
+From the repository root, with the backend running:
 
 ```bash
-python scripts/verify.py
+backend/.venv/bin/python scripts/verify.py
 ```
 
-Runs the isolation test suite against the live backend — private memories don't cross
-characters, shared events reach only the roles in their audience.
+The script clears messages, memories, conversations, and shared events for the seeded demo players, then checks cross-character isolation, cross-player isolation, and automatic structuring-event publication.
 
 ## Troubleshooting
 
-**`IsADirectoryError: [Errno 21] Is a directory` on backend startup.** `docker-compose.yml`
-bind-mounts `~/.postgresql/root.crt` (the CockroachDB Cloud CA cert) into the container. If
-that path doesn't exist on your host, Docker silently creates an empty *directory* there
-instead of failing, so the container sees a directory where a cert file should be. Fix:
+### Bedrock access errors
 
-```bash
-rm -rf ~/.postgresql/root.crt   # remove the phantom directory, if present
-mkdir -p ~/.postgresql
-curl -o ~/.postgresql/root.crt 'https://cockroachlabs.cloud/clusters/<cluster-id>/cert'
-docker compose down && docker compose up --build backend   # re-resolve the mount
-```
+Confirm that both configured model IDs are enabled in the same region as `AWS_REGION`. Embeddings do not use the Gemini dialogue fallback.
 
-`root.crt` is just the cluster's public CA certificate — not a secret — so it's fine to
-copy it from a teammate instead of downloading your own.
+### TLS certificate mount errors
 
-To skip the cert entirely, drop `sslmode=verify-full` to `sslmode=require` in
-`COCKROACHDB_URL` — still encrypted, just no server-identity check. Fine for local dev.
+If Docker reports `IsADirectoryError` for `/root/.postgresql/root.crt`, inspect `~/.postgresql/root.crt` on the host. Docker creates a directory at a missing bind-mount source path; replace it with the CockroachDB cluster CA certificate before restarting the container.
 
-**`Connection refused` / `Cannot assign requested address`.** `COCKROACHDB_URL` is still
-the `.env.example` placeholder (`postgresql://root@localhost:26257/...`). Replace it with
-the real cluster URL from `bootstrap.sh`'s output.
+### Database connection errors
+
+The value in `backend/.env.example` points to an insecure local CockroachDB instance. Replace it with the connection string for the provisioned cluster before running the backend against CockroachDB Cloud.

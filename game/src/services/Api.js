@@ -1,6 +1,5 @@
 import { API_URL, BRANCH_ID, PLAYER_ID, SESSION_ID } from "../config";
 
-// Thin wrapper over the OmniNPC backend. Only the routes the game needs.
 class Api {
   async get(path) {
     const res = await fetch(`${API_URL}${path}`);
@@ -18,6 +17,16 @@ class Api {
     return res.json();
   }
 
+  async put(path, body) {
+    const res = await fetch(`${API_URL}${path}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`PUT ${path} -> ${res.status}`);
+    return res.json();
+  }
+
   async del(path) {
     const res = await fetch(`${API_URL}${path}`, { method: "DELETE" });
     if (!res.ok) throw new Error(`DELETE ${path} -> ${res.status}`);
@@ -28,7 +37,10 @@ class Api {
     return this.get("/npcs");
   }
 
-  // Returns { reply, recalled_memories: [{source_type, content, similarity}], prompt_sent }.
+  ensurePlayer() {
+    return this.put(`/players/${PLAYER_ID}`, { name: "Browser Player" });
+  }
+
   dialogue(npcId, message) {
     return this.post("/dialogue", {
       npc_id: npcId,
@@ -38,24 +50,20 @@ class Api {
     });
   }
 
-  // Publish a manager authorization the guard can later recall. Scoped to this session so a
-  // guard in another session does not inherit it. Used by the demo control.
-  authorize(summary) {
+  // The server fixes the summary and audience; the client supplies only scope identifiers.
+  authorize() {
     return this.post("/world/authorize", {
       branch_id: BRANCH_ID,
       player_id: PLAYER_ID,
       session_id: SESSION_ID,
-      summary,
     });
   }
 
-  // Wipe all memory/events, keep the branch/npc/player fixtures. Used by the reset button.
   resetWorld() {
     return this.del("/world/reset");
   }
 
-  // Tear down this play session's collection. Called on tab close via keepalive so the
-  // request still goes out while the page is unloading; a normal fetch would be cancelled.
+  // keepalive allows the request to finish during page teardown.
   endSession() {
     return fetch(`${API_URL}/world/session/${SESSION_ID}`, {
       method: "DELETE",

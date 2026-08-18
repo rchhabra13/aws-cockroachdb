@@ -1,13 +1,4 @@
-"""Prompt composition.
-
-Kept separate from the router because how memories are presented turns out to matter as
-much as which memories are retrieved. An earlier version listed every recalled memory as
-an undifferentiated bullet, and the guard ignored a manager issued authorization sitting
-in her own context, because nothing marked it as more authoritative than small talk.
-
-Labelling provenance is what makes a shared branch event carry weight, and it is also
-what the memory inspector renders back to the user.
-"""
+"""Compose prompts with separate private-memory and official-bulletin sections."""
 
 from app.models import MemoryHit
 

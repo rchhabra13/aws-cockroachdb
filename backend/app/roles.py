@@ -1,16 +1,10 @@
-"""Which roles may see which kind of branch event.
-
-Server owned on purpose. Callers name an event type; they never choose the audience,
-so a compromised or hallucinating caller cannot widen visibility.
-"""
+"""Server-owned visibility rules for branch events."""
 
 EVENT_VISIBILITY: dict[str, list[str]] = {
     "authorization": ["guard", "manager"],
     "vault_approach": ["guard", "manager"],
     "suspicion": ["guard", "manager", "teller", "loan_officer", "compliance"],
-    # Structuring (smurfing) is a compliance matter first: it reaches compliance and the
-    # manager, and the guard, but not the teller windows it was spread across — a teller
-    # seeing "this player is being watched for structuring" would tip the pattern off.
+    # Excluding tellers prevents the alert from reaching the windows involved.
     "structuring": ["compliance", "manager", "guard"],
 }
 

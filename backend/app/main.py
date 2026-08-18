@@ -5,11 +5,12 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-load_dotenv()  # so AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in backend/.env reach boto3's default credential chain
+# boto3 reads AWS credentials loaded from backend/.env.
+load_dotenv()
 
 from app.db import close_pool
 from app.models import DialogueRequest
-from app.routers import dialogue, npcs, world
+from app.routers import dialogue, npcs, players, world
 from app.routers.dialogue import dialogue as run_dialogue
 
 
@@ -21,8 +22,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="OmniNPC", lifespan=lifespan)
 
-# The demo UI is served from a different port, so the browser treats it as cross origin.
-# Open here because this is a local demo; narrow it before exposing the API publicly.
+# The local game and API use different ports. Restrict this for deployment.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,6 +32,7 @@ app.add_middleware(
 
 app.include_router(dialogue.router)
 app.include_router(npcs.router)
+app.include_router(players.router)
 app.include_router(world.router)
 
 

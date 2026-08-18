@@ -7,7 +7,7 @@ router = APIRouter(prefix="/npcs", tags=["npcs"])
 
 @router.get("")
 async def list_npcs() -> list[dict]:
-    """Characters the player can talk to, so the UI does not hardcode identifiers."""
+    """Return the available characters from seed or application data."""
     pool = await get_pool()
     rows = await pool.fetch(
         """

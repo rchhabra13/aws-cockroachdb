@@ -1,13 +1,4 @@
-"""Amazon Bedrock dialogue and embedding adapter.
-
-Dialogue uses Amazon Nova through the Converse API rather than raw ``invoke_model``.
-Converse takes the same request shape for every model, so changing model is a model id
-change instead of a new request body.
-
-Embeddings use Titan Text Embeddings V2. Its supported output sizes are 1024, 512, and
-256; 384 is not among them, so the schema's vector width is tied to whichever embedding
-provider is configured. See app/embeddings.py.
-"""
+"""Amazon Bedrock adapter for Nova dialogue and Titan embeddings."""
 
 import json
 
@@ -40,12 +31,20 @@ def embed_text(text: str) -> list[float]:
     return json.loads(response["body"].read())["embedding"]
 
 
-def generate_dialogue(system_prompt: str, user_message: str) -> str:
+def generate_dialogue(system_prompt: str, user_message: str, history=None) -> str:
     settings = get_settings()
+
+    # Stored speaker names must be mapped to Converse roles; order is already chronological.
+    messages = []
+    for turn in history or []:
+        role = "user" if turn["speaker"] == "player" else "assistant"
+        messages.append({"role": role, "content": [{"text": turn["content"]}]})
+    messages.append({"role": "user", "content": [{"text": user_message}]})
+
     response = _client().converse(
         modelId=settings.bedrock_dialogue_model_id,
         system=[{"text": system_prompt}],
-        messages=[{"role": "user", "content": [{"text": user_message}]}],
+        messages=messages,
         inferenceConfig={"maxTokens": 512},
     )
     return response["output"]["message"]["content"][0]["text"]
